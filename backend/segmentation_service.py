@@ -91,6 +91,9 @@ MESH_COLORS = {
     "liver_vessels": (255, 107, 53, 220),
     "liver_tumor": (239, 68, 68, 220),
     "liver": (79, 195, 247, 120),
+    "kidney": (139, 90, 43, 200),
+    "urinary_bladder": (250, 204, 21, 180),
+    "adrenal_gland": (168, 85, 247, 180),
 }
 
 # Un seul job lourd (GPU) à la fois par défaut — augmentez si vous avez
@@ -202,14 +205,111 @@ def _maybe_build_lowpoly_twin_mesh(job_id: str, target_faces: int = 1500) -> Opt
 
 
 # ------------------------------------------------------------------
+# Segmentation urologique réelle : reins, vessie, surrénales — via la tâche
+# GÉNÉRIQUE "total" de TotalSegmentator (roi_subset), pas un modèle dédié
+# comme liver_segments/liver_vessels pour le foie (aucun n'existe pour le
+# rein/la vessie dans TotalSegmentator à ce jour).
+# ------------------------------------------------------------------
+_UROLOGIE_ROIS = ["kidney_left", "kidney_right", "urinary_bladder",
+                   "adrenal_gland_left", "adrenal_gland_right"]
+_UROLOGIE_DISPLAY_NAMES = {
+    "kidney_left": "Rein gauche", "kidney_right": "Rein droit",
+    "urinary_bladder": "Vessie",
+    "adrenal_gland_left": "Surrénale gauche", "adrenal_gland_right": "Surrénale droite",
+}
+_UROLOGIE_MESH_COLOR_KEY = {
+    "kidney_left": "kidney", "kidney_right": "kidney",
+    "urinary_bladder": "urinary_bladder",
+    "adrenal_gland_left": "adrenal_gland", "adrenal_gland_right": "adrenal_gland",
+}
+
+
+def _run_urologie_segmentation_job(job_id: str, nifti_input: Path, patient_id: str,
+                                    job: dict, t0: float) -> dict:
+    """
+    LIMITES HONNÊTES (en plus de celles du module, voir en-tête du fichier) :
+      - Pas de modèle dédié pour une tumeur rénale/vésicale (contrairement à
+        liver_tumor pour le foie) : la tâche "total" segmente les organes
+        pleins sains, pas une lésion. La néphrométrie RENAL et la
+        classification de Bosniak restent des évaluations MANUELLES (voir le
+        panneau de staging urologie) — cette segmentation ne les automatise pas.
+      - Pas de vaisseaux rénaux isolés (pas d'équivalent à liver_vessels).
+      - La PROSTATE N'EST PAS segmentée : TotalSegmentator "total" est
+        entraîné sur CT, où le contraste des tissus mous prostatiques est
+        insuffisant pour une segmentation fiable — la pratique clinique
+        utilise l'IRM pour la prostate, hors du périmètre CT de ce pipeline.
+    """
+    from totalsegmentator.python_api import totalsegmentator
+    from totalsegmentator.map_to_binary import class_map
+
+    job["status"] = "running"
+    job["progress"] = "Segmentation rénale/vésicale (TotalSegmentator, tâche 'total')..."
+
+    job_dir = WORKDIR / job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    total_out = job_dir / "total.nii.gz"
+    totalsegmentator(
+        input=str(nifti_input), output=str(total_out),
+        task="total", ml=True, output_type="nifti",
+        device=DEVICE, fast=FAST_MODE, roi_subset=list(_UROLOGIE_ROIS), quiet=True,
+    )
+
+    # Recherche dynamique nom -> index de label (dépend de la version de
+    # TotalSegmentator installée) : même principe défensif que pour "liver"
+    # dans le pipeline hépatique. Une structure absente de cette version est
+    # ignorée proprement (pas de crash) plutôt que de lever une KeyError.
+    name_to_label = {v: k for k, v in class_map["total"].items()}
+
+    structures_payload: List[dict] = []
+    for roi in _UROLOGIE_ROIS:
+        label = name_to_label.get(roi)
+        if label is None:
+            continue
+        vol_ml = _label_volumes_ml(total_out, {label: roi}).get(roi, 0.0)
+        entry = {"organ": roi, "type": "organe", "label": _UROLOGIE_DISPLAY_NAMES.get(roi, roi),
+                  "volume_ml": vol_ml}
+        entry["mesh_url"] = _maybe_build_mesh(
+            job_id, total_out, label_value=label, name=roi,
+            color=MESH_COLORS[_UROLOGIE_MESH_COLOR_KEY.get(roi, "kidney")], job=job,
+        )
+        structures_payload.append(entry)
+
+    kidney_total_ml = round(sum(e["volume_ml"] for e in structures_payload
+                                 if e["organ"] in ("kidney_left", "kidney_right")), 1)
+
+    return {
+        "patient_id": patient_id,
+        "segments": structures_payload,
+        "vessels": [],
+        "kidney_total_ml": kidney_total_ml,
+        "model": "TotalSegmentator (nnU-Net) — task: total, roi_subset=" + ",".join(_UROLOGIE_ROIS),
+        "processing_time_s": round(time.time() - t0, 1),
+        "note": (
+            "Organes pleins uniquement (reins, surrénales, vessie) — pas de modèle dédié pour "
+            "une tumeur rénale/vésicale ni pour les vaisseaux rénaux (contrairement au foie). "
+            "Prostate non incluse (nécessite IRM, hors périmètre CT). Néphrométrie RENAL et "
+            "classification de Bosniak restent des évaluations manuelles (panneau de staging)."
+        ),
+    }
+
+
+# ------------------------------------------------------------------
 # Job de segmentation réel (exécuté dans le thread pool)
 # ------------------------------------------------------------------
-def _run_segmentation_job(job_id: str, nifti_input: Path, patient_id: str) -> None:
+def _run_segmentation_job(job_id: str, nifti_input: Path, patient_id: str, specialty: str = "hbp") -> None:
     job = _JOBS[job_id]
     t0 = time.time()
     try:
         from totalsegmentator.python_api import totalsegmentator
 
+        if specialty == "urologie":
+            result = _run_urologie_segmentation_job(job_id, nifti_input, patient_id, job, t0)
+            job["status"] = "done"
+            job["progress"] = "Terminé."
+            job["result"] = result
+            return
+
+        # ── Pipeline hépatique existant (défaut, compatibilité ascendante) ──
         job_dir = WORKDIR / job_id
         job_dir.mkdir(parents=True, exist_ok=True)
 
@@ -325,7 +425,7 @@ def _run_segmentation_job(job_id: str, nifti_input: Path, patient_id: str) -> No
 # ------------------------------------------------------------------
 # Endpoints
 # ------------------------------------------------------------------
-def start_job_from_dicom_dir(dicom_dir: Path, patient_id: str) -> str:
+def start_job_from_dicom_dir(dicom_dir: Path, patient_id: str, specialty: str = "hbp") -> str:
     """Démarre un job de segmentation à partir d'un dossier de fichiers .dcm
     DÉJÀ PRÉSENTS SUR DISQUE (ex. une série importée depuis un PACS et
     sauvegardée par pacs_router.py), sans passer par un nouvel upload de
@@ -336,6 +436,14 @@ def start_job_from_dicom_dir(dicom_dir: Path, patient_id: str) -> str:
     endpoint « segmenter cette série déjà importée » partagent EXACTEMENT
     la même conversion DICOM->NIfTI et le même pipeline d'inférence — pas de
     logique dupliquée qui pourrait diverger silencieusement.
+
+    `specialty` sélectionne le pipeline TotalSegmentator ("hbp" = foie,
+    par défaut pour compatibilité ascendante ; "urologie" = reins/vessie/
+    surrénales, voir _run_urologie_segmentation_job). Les autres spécialités
+    n'ont pas encore de pipeline dédié et retombent sur le pipeline hépatique
+    par défaut — pas idéal, mais pas pire que le comportement d'avant cette
+    évolution (qui était systématiquement hépatique quelle que soit la
+    spécialité réelle du patient).
     """
     if not dicom_dir.is_dir() or not any(dicom_dir.iterdir()):
         raise ValueError(f"Dossier DICOM vide ou introuvable : {dicom_dir}")
@@ -353,7 +461,7 @@ def start_job_from_dicom_dir(dicom_dir: Path, patient_id: str) -> str:
         _JOBS[job_id]["error"] = f"Conversion DICOM->NIfTI échouée: {e}"
         raise
 
-    EXECUTOR.submit(_run_segmentation_job, job_id, nifti_path, patient_id)
+    EXECUTOR.submit(_run_segmentation_job, job_id, nifti_path, patient_id, specialty)
     return job_id
 
 
@@ -387,13 +495,17 @@ async def capabilities():
 
 
 @router.post("/auto", status_code=202)
-async def start_segmentation(patient_id: str, files: List[UploadFile] = File(...)):
+async def start_segmentation(patient_id: str, specialty: str = "hbp", files: List[UploadFile] = File(...)):
     """
     Démarre un job de segmentation réel. Accepte soit :
       - plusieurs fichiers .dcm (une série DICOM complète), soit
       - un seul fichier .nii / .nii.gz déjà reconstruit.
     Retourne immédiatement un job_id (HTTP 202) — le calcul tourne en
     tâche de fond, le front doit sonder GET /segmentation/status/{job_id}.
+
+    `specialty` (défaut "hbp") sélectionne le pipeline TotalSegmentator —
+    voir start_job_from_dicom_dir. Le frontend envoie le module actif
+    (state.mod) dans ce paramètre.
     """
     if not files:
         raise HTTPException(400, "Aucun fichier reçu.")
@@ -408,7 +520,7 @@ async def start_segmentation(patient_id: str, files: List[UploadFile] = File(...
             nifti_path = job_dir / "input.nii.gz"
             with open(nifti_path, "wb") as f:
                 f.write(await files[0].read())
-            EXECUTOR.submit(_run_segmentation_job, job_id, nifti_path, patient_id)
+            EXECUTOR.submit(_run_segmentation_job, job_id, nifti_path, patient_id, specialty)
             return {"job_id": job_id, "status": "pending"}
         else:
             # Dossier de réception temporaire, DISTINCT du job_id final : la
@@ -425,7 +537,7 @@ async def start_segmentation(patient_id: str, files: List[UploadFile] = File(...
                 # Réutilise EXACTEMENT le même chemin que « segmenter une
                 # série déjà importée » : évite que les deux points d'entrée
                 # divergent silencieusement avec le temps.
-                job_id = start_job_from_dicom_dir(staging_dir, patient_id)
+                job_id = start_job_from_dicom_dir(staging_dir, patient_id, specialty)
                 return {"job_id": job_id, "status": "pending"}
             finally:
                 shutil.rmtree(staging_dir, ignore_errors=True)

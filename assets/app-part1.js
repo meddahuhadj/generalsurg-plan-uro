@@ -1737,7 +1737,7 @@
             try {
               const form = new FormData();
               files.forEach(f => form.append('files', f, f.name));
-              const startResp = await fetch(`${base}/segmentation/auto?patient_id=${encodeURIComponent(mod.patient.id)}`, { method: 'POST', body: form });
+              const startResp = await fetch(`${base}/segmentation/auto?patient_id=${encodeURIComponent(mod.patient.id)}&specialty=${encodeURIComponent(state.mod)}`, { method: 'POST', body: form });
               if (!startResp.ok) throw new Error('Démarrage du job échoué (' + startResp.status + ')');
               const { job_id } = await startResp.json();
               notify('Job de segmentation démarré (' + job_id + ') — inférence nnU-Net en cours...', 'info');
@@ -1752,7 +1752,12 @@
                 return;
               }
               await loadRealMeshesIntoScene(result, base);
-              notify(`✓ Segmentation réelle chargée — ${result.segments.length} structure(s), foie total ${result.liver_total_ml} mL`, 'ok');
+              // Message générique (pas de champ *_total_ml codé en dur) : le pipeline hépatique
+              // renvoie liver_total_ml, le pipeline urologie renvoie kidney_total_ml — aucun des
+              // deux n'existe dans tous les cas, donc on affiche la somme des structures réellement
+              // renvoyées plutôt qu'un champ spécifique à une seule spécialité.
+              const totalMl = Math.round((result.segments || []).reduce((s, e) => s + (e.volume_ml || 0), 0));
+              notify(`✓ Segmentation réelle chargée — ${result.segments.length} structure(s), volume total ${totalMl} mL`, 'ok');
               setRealSegStatus('Segmentation IA réelle chargée ✓');
             } catch (e) {
               hideLoader();

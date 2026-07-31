@@ -30,6 +30,7 @@ storage/*
 # Rapports de tests / logs
 pbdtest_reports/*.log
 *.log
+backend/tests/.tmp_test_segmentation_urologie/
 
 # Outils / éditeurs
 .vscode/

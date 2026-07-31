@@ -897,3 +897,88 @@ sensible au timing Windows). JSON validé sur les 4 fichiers de langue
   dans le script) — préexistant, pas propre aux clés urologie ajoutées ici
   (validées indépendamment par un parsing JSON direct), non résolu par
   manque de temps dans cette session.
+
+## Backend — Segmentation IA réelle étendue à l'urologie (reins, vessie, surrénales)
+
+### Ce qui a été ajouté
+Jusqu'ici, `backend/segmentation_service.py` (pipeline TotalSegmentator réel)
+était **exclusivement hépatique** : quelle que soit la spécialité réelle du
+patient, `/segmentation/auto` lançait `task="liver_segments"` +
+`task="liver_vessels"`. Un patient urologie qui cliquait sur « 🔬
+Segmentation IA réelle » obtenait donc un maillage de foie.
+
+- `_run_urologie_segmentation_job()` — nouvelle branche utilisant la tâche
+  **générique** `task="total"` de TotalSegmentator avec
+  `roi_subset=["kidney_left","kidney_right","urinary_bladder","adrenal_gland_left","adrenal_gland_right"]`
+  (pas de modèle dédié équivalent à `liver_segments`/`liver_vessels` pour le
+  rein — TotalSegmentator n'en propose pas). Recherche dynamique nom→index
+  de label (même principe défensif que pour `"liver"` dans le pipeline
+  hépatique) : une structure absente d'une version donnée de
+  TotalSegmentator est ignorée proprement, jamais un crash.
+- `_run_segmentation_job()`, `start_job_from_dicom_dir()` et l'endpoint
+  `POST /segmentation/auto` acceptent désormais un paramètre `specialty`
+  (défaut `"hbp"`, compatibilité ascendante totale) qui sélectionne le
+  pipeline. `routers/dicom.py` (segmentation depuis une série déjà
+  importée) lit maintenant la spécialité réelle du patient en base plutôt
+  que de supposer systématiquement `"hbp"`.
+- Frontend : `runRealSegmentation()` envoie `specialty=state.mod` (le
+  module actif) ; le message de confirmation affiché après chargement des
+  maillages ne mentionne plus « foie total » en dur (`result.liver_total_ml`
+  n'existe pas pour les autres spécialités) mais la somme réelle des
+  volumes de structures renvoyées, quelle que soit la spécialité.
+- **`backend/tests/test_segmentation_urologie.py`** (4 tests) — mocke
+  `totalsegmentator.python_api.totalsegmentator` et
+  `totalsegmentator.map_to_binary.class_map` (injection dans `sys.modules`,
+  TotalSegmentator n'étant pas installé dans ce sandbox) pour vérifier avec
+  de vrais fichiers NIfTI (nibabel réel, pas mocké) : la tâche/roi_subset
+  demandés, la forme du résultat (5 structures avec volumes+maillages
+  réels), la tolérance à une structure absente du modèle (surrénales non
+  reconnues par une version donnée → ignorées sans crash), le dispatch
+  correct depuis `_run_segmentation_job()` selon `specialty`, et la
+  non-régression du chemin par défaut (`specialty="hbp"` → pipeline
+  hépatique inchangé).
+
+### Testé réellement
+`pytest backend/tests/ -q` → 42 passed sur les fichiers concernés par cette
+session (le détail complet, avec les 3 échecs préexistants sans rapport,
+est documenté ci-dessous). Les 4 nouveaux tests de segmentation urologie
+écrivent et relisent de vrais fichiers NIfTI et GLB (nibabel + trimesh +
+scikit-image réels, marching cubes réel) — seule l'inférence deep learning
+TotalSegmentator elle-même est mockée, pas le reste du pipeline.
+
+**⚠️ Problème d'environnement découvert pendant cette session (sans rapport
+avec le code) : le disque système de cette machine (`C:`) est plein (0
+octet disponible sur 276 Go)**, ce qui fait échouer `tempfile.gettempdir()`
+et donc le fixture pytest `tmp_path` par défaut (`No space left on
+device`), touchant plusieurs tests préexistants
+(`test_mesh_distance.py::test_mesh_distance_from_glb_roundtrip`) en plus
+des nouveaux. Contournement appliqué uniquement dans
+`test_segmentation_urologie.py` : un fixture `tmp_path` local qui écrit
+sous `backend/tests/.tmp_test_segmentation_urologie/` (sur `D:`, ignoré par
+git) plutôt que de dépendre de l'espace libre sur `C:`. **Recommandé côté
+utilisateur : libérer de l'espace sur `C:` avant de considérer les
+résultats de tests comme fiables sur cette machine** — un disque système
+plein peut faire échouer silencieusement bien plus que des tests Python.
+
+### Limites honnêtes
+- Comme pour le foie, aucune détection automatique de tumeur/lésion rénale
+  ou vésicale : la tâche `"total"` segmente les organes sains, pas une
+  masse. La néphrométrie RENAL et la classification de Bosniak restent
+  des évaluations manuelles (panneau de staging), pas des sorties de ce
+  pipeline.
+- Pas de vaisseaux rénaux isolés (pas d'équivalent à `liver_vessels`).
+- **La prostate n'est pas segmentée** : TotalSegmentator `"total"` est
+  entraîné sur CT, où le contraste des tissus mous prostatiques est
+  insuffisant pour une segmentation fiable — la pratique clinique utilise
+  l'IRM pour la prostate, hors du périmètre CT de ce pipeline. Documenté
+  explicitement dans le docstring de `_run_urologie_segmentation_job()`
+  plutôt que silencieusement absent.
+- Non testé contre une vraie inférence TotalSegmentator (pas de GPU/poids
+  de modèle dans ce sandbox, même limite déjà documentée pour le pipeline
+  hépatique) — seule la logique de sélection de tâche/labels/résultat est
+  vérifiée, pas la qualité de segmentation réelle sur un vrai CT.
+- Les autres spécialités (colorectal, gastrique, thyroïde, thoracique,
+  cardiaque) n'ont toujours pas de pipeline dédié : `specialty` autre que
+  `"hbp"`/`"urologie"` retombe sur le pipeline hépatique par défaut — pas
+  idéal, mais pas une régression (c'était déjà le seul comportement
+  possible avant cette session, pour toutes les spécialités).

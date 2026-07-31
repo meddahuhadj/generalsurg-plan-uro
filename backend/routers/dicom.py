@@ -127,8 +127,16 @@ async def segment_from_existing_series(series_id: str, request: Request,
     if not local_dir.is_dir():
         raise HTTPException(410, f"Le dossier local de cette série n'existe plus sur ce serveur ({local_dir}).")
 
+    # Sélectionne le pipeline TotalSegmentator selon la spécialité réelle du
+    # patient (voir segmentation_service.start_job_from_dicom_dir) — avant ce
+    # correctif, ce chemin d'entrée (segmentation depuis une série déjà
+    # importée) était toujours traité comme du foie, même pour un patient
+    # urologie/autre spécialité.
+    patient = db.get(models.Patient, series.patient_id)
+    specialty = patient.specialty if patient else "hbp"
+
     try:
-        job_id = segmentation_service.start_job_from_dicom_dir(local_dir, series.patient_id)
+        job_id = segmentation_service.start_job_from_dicom_dir(local_dir, series.patient_id, specialty)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     except RuntimeError as e:
