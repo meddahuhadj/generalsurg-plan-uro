@@ -24,9 +24,10 @@ function assert(cond, msg) {
 const startMarker = 'const I18N_EMBEDDED = ';
 const start = html.indexOf(startMarker);
 if (start === -1) throw new Error('const I18N_EMBEDDED introuvable dans le HTML');
-const iifeMarker = 'const I18N = (function(){';
-const iifeStart = html.indexOf(iifeMarker, start);
-if (iifeStart === -1) throw new Error('const I18N = (function(){ introuvable');
+const iifeRegex = /const I18N = \(function\s*\(\)\s*\{/;
+const iifeMatch = iifeRegex.exec(html.slice(start));
+if (!iifeMatch) throw new Error('const I18N = (function(){ introuvable');
+const iifeStart = start + iifeMatch.index;
 // Depuis le début de l'IIFE, on cherche le "})();" correspondant en comptant les accolades.
 let i = html.indexOf('{', iifeStart);
 let depth = 0;

@@ -841,3 +841,59 @@ pu être exécutés ici. À vérifier sur un poste réel avec Chrome/Edge 113+.
   moteur JS ne survit pas à un F5) — seul le téléchargement des poids est
   mis en cache par le navigateur, l'utilisateur doit recliquer "Charger" à
   chaque session (rapide après le premier téléchargement).
+
+## Backend + Frontend — Urologie : Bosniak, D'Amico, et tests unitaires du calcul RENAL
+
+### Ce qui a été ajouté
+- **Classification de Bosniak** (kystes rénaux, I à IV) dans le panneau de
+  staging urologie — règle de décision dédiée (`updateStagingDecision()`) :
+  IV = exérèse indiquée, III = exérèse recommandée (~50% de malignité,
+  indéterminé à l'imagerie seule), IIF = surveillance rapprochée 6-12 mois,
+  I/II = bénin.
+- **Stratification de risque de D'Amico** (cancer de prostate localisé),
+  calculée à partir de 3 champs déjà/nouvellement présents dans le panneau
+  de staging : PSA total, Gleason/ISUP (déjà existant), et un nouveau champ
+  de stade clinique prostatique dédié (`cT1c` à `cT3b` — volontairement
+  distinct du champ TNM générique T1a-T4b partagé par les autres
+  spécialités, dont les catégories ne correspondent pas à la stadification
+  clinique de la prostate). Règle classique : faible risque = PSA<10 ET
+  ISUP1 ET ≤cT2a ; élevé = PSA>20 OU ISUP≥4 OU ≥cT2c ; intermédiaire sinon.
+- **Refactor testable** : la logique de néphrométrie RENAL (complexité +
+  parenchyme préservé + DFG prédit), jusque-là uniquement écrite inline
+  dans l'endpoint `GET /patients/{id}/volumetrie`, est extraite en fonction
+  pure `_renal_nephrometry()` (`backend/routers/volumetrie.py`) — même
+  principe que `_flr_threshold()` déjà présent dans ce fichier pour le HBP.
+- **`backend/tests/test_volumetrie_urologie.py`** (7 tests pytest, aucune
+  DB/HTTP nécessaire) — complexité simple/intermédiaire/complexe aux bornes
+  exactes du score (6/7/9/10), bascule vers le DFG du rein controlatéral en
+  cas de néphrectomie totale présumée (RENAL ≥10), absence de score/DFG
+  gérée sans exception, score mal formé ignoré proprement.
+- Corrigé au passage : `pbdtest_reports/run_test_i18n.js` cherchait le
+  marqueur littéral `const I18N = (function(){`, alors que le code réel
+  s'écrit `(function () {` (espace avant les parenthèses) — le test
+  échouait donc systématiquement avant même d'atteindre les nouvelles clés
+  ajoutées ici. Remplacé par une regex tolérante à l'espacement. Ce script
+  a un problème plus profond et préexistant (non lié à ce changement,
+  non creusé ici) qui l'empêche encore d'aller jusqu'au bout.
+
+### Testé réellement
+`pytest backend/tests/ -q` → 36 passed (seul échec : un test de timing
+réseau `test_mllp.py` préexistant et sans rapport, déjà signalé comme
+sensible au timing Windows). JSON validé sur les 4 fichiers de langue
+(`node -e "JSON.parse(...)"`), syntaxe JS validée sur les 3 fichiers
+`assets/app-part*.js` modifiés (`node -c`).
+
+### Limites honnêtes
+- Le risque de D'Amico est calculé côté frontend à partir de 3 champs
+  saisis manuellement (pas de nomogramme validé type Memorial Sloan
+  Kettering / Briganti, pas de calcul de probabilité d'atteinte
+  ganglionnaire) — c'est une classification de risque qualitative
+  classique, pas un score prédictif calibré sur cohorte.
+- La classification de Bosniak reste une saisie manuelle (I à IV choisie
+  par l'utilisateur) : aucune classification automatique depuis l'imagerie
+  n'est effectuée par l'application.
+- `pbdtest_reports/run_test_i18n.js` échoue encore après le correctif du
+  marqueur (`TypeError: Cannot read properties of undefined`, plus loin
+  dans le script) — préexistant, pas propre aux clés urologie ajoutées ici
+  (validées indépendamment par un parsing JSON direct), non résolu par
+  manque de temps dans cette session.

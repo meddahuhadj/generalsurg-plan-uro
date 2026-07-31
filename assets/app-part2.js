@@ -604,6 +604,9 @@
               pirads: isUrologie ? '4' : null,
               gleason: isUrologie ? '3+4 (ISUP 2)' : null,
               dfg: isUrologie ? '68' : null,
+              bosniak: isUrologie ? 'Non applicable' : null,
+              psa: isUrologie ? '7.2' : null,
+              pStage: isUrologie ? 'cT2a' : null,
             };
             state.mpr._stagingData = stagingData;
 
@@ -688,6 +691,22 @@
         <label>${I18N.t('staging.dfgField')}</label>
         <input id="stg-dfg" type="text" value="${stagingData.dfg || '68'}" onchange="updateStagingDecision()">
       </div>
+      <div class="staging-field">
+        <label>${I18N.t('staging.bosniakField')}</label>
+        <select id="stg-bosniak" onchange="updateStagingDecision()">
+          ${['Non applicable', 'I', 'II', 'IIF', 'III', 'IV'].map(v => `<option ${stagingData.bosniak === v ? 'selected' : ''}>${v}</option>`).join('')}
+        </select>
+      </div>
+      <div class="staging-field">
+        <label>${I18N.t('staging.psaField')}</label>
+        <input id="stg-psa" type="text" value="${stagingData.psa || '7.2'}" onchange="updateStagingDecision()">
+      </div>
+      <div class="staging-field">
+        <label>${I18N.t('staging.pStageField')}</label>
+        <select id="stg-pstage" onchange="updateStagingDecision()">
+          ${['cT1c', 'cT2a', 'cT2b', 'cT2c', 'cT3a', 'cT3b'].map(v => `<option ${stagingData.pStage === v ? 'selected' : ''}>${v}</option>`).join('')}
+        </select>
+      </div>
     </div>` : ''}
 
     <div class="staging-section">
@@ -735,6 +754,9 @@
             const pirads = document.getElementById('stg-pirads')?.value;
             const gleason = document.getElementById('stg-gleason')?.value;
             const dfgStr = document.getElementById('stg-dfg')?.value;
+            const bosniak = document.getElementById('stg-bosniak')?.value;
+            const psaStr = document.getElementById('stg-psa')?.value;
+            const pStage = document.getElementById('stg-pstage')?.value;
 
             // Sauvegarde
             if (state.mpr._stagingData) {
@@ -747,6 +769,9 @@
               if (pirads) state.mpr._stagingData.pirads = pirads;
               if (gleason) state.mpr._stagingData.gleason = gleason;
               if (dfgStr) state.mpr._stagingData.dfg = dfgStr;
+              if (bosniak) state.mpr._stagingData.bosniak = bosniak;
+              if (psaStr) state.mpr._stagingData.psa = psaStr;
+              if (pStage) state.mpr._stagingData.pStage = pStage;
             }
 
             const criteria = [];
@@ -864,6 +889,38 @@
                 criteria.push({ ok: 'warn', text: `DFG ${dfgStr} — réserve rénale limitée : privilégier le clampage sélectif et minimiser l'ischémie` });
               } else if (!isNaN(dfg)) {
                 criteria.push({ ok: true, text: `DFG ${dfgStr} — fonction rénale conservée, néphrectomie partielle confortable` });
+              }
+            }
+
+            // Urologie — classification de Bosniak (kystes rénaux)
+            if (bosniak && bosniak !== 'Non applicable') {
+              if (bosniak === 'IV') {
+                criteria.push({ ok: false, text: `Bosniak IV — lésion kystique franchement suspecte de malignité : exérèse chirurgicale indiquée` });
+              } else if (bosniak === 'III') {
+                criteria.push({ ok: 'warn', text: `Bosniak III — risque de malignité ~50% (indéterminé à l'imagerie seule) : exérèse chirurgicale recommandée` });
+              } else if (bosniak === 'IIF') {
+                criteria.push({ ok: 'warn', text: `Bosniak IIF — surveillance rapprochée par imagerie (6-12 mois), risque de malignité faible mais non nul` });
+              } else {
+                criteria.push({ ok: true, text: `Bosniak ${bosniak} — kyste bénin, aucune surveillance spécifique nécessaire` });
+              }
+            }
+
+            // Urologie — risque de D'Amico (cancer de prostate localisé) : PSA + Gleason/ISUP + stade clinique
+            if (psaStr && gleason && pStage) {
+              const psa = parseFloat(psaStr);
+              const isupMatch = gleason.match(/ISUP\s*(\d)/);
+              const isup = isupMatch ? parseInt(isupMatch[1], 10) : null;
+              const stageRank = { cT1c: 1, cT2a: 2, cT2b: 3, cT2c: 4, cT3a: 5, cT3b: 6 }[pStage] ?? 2;
+              if (!isNaN(psa) && isup !== null) {
+                const isHigh = psa > 20 || isup >= 4 || stageRank >= 4;
+                const isLow = psa < 10 && isup === 1 && stageRank <= 2;
+                if (isHigh) {
+                  criteria.push({ ok: 'warn', text: `Risque de D'Amico élevé (PSA ${psaStr}, Gleason ${gleason}, ${pStage}) — prostatectomie élargie + curage ilio-obturateur ou radio-hormonothérapie à discuter` });
+                } else if (isLow) {
+                  criteria.push({ ok: true, text: `Risque de D'Amico faible (PSA ${psaStr}, Gleason ${gleason}, ${pStage}) — surveillance active envisageable selon l'âge/les comorbidités` });
+                } else {
+                  criteria.push({ ok: 'warn', text: `Risque de D'Amico intermédiaire (PSA ${psaStr}, Gleason ${gleason}, ${pStage}) — prostatectomie radicale ou radiothérapie selon préférence du patient` });
+                }
               }
             }
 

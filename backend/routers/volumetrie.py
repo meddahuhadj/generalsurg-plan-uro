@@ -30,6 +30,41 @@ def _flr_threshold(is_cirrhotic: bool, bsa: float) -> float:
     return max(25.0, 20.0 + 10.0 * (1.0 - bsa / 1.9))
 
 
+def _renal_nephrometry(renal_score: Optional[str], dfg_preop: Optional[float],
+                        organe_vol: float, resected: float) -> dict:
+    """Néphrométrie RENAL (Radius/Exophytic/Nearness/Anterior/Location) → complexité
+    tumorale + parenchyme rénal préservé + DFG post-opératoire prédit.
+
+    Fonction pure (aucune dépendance DB/FastAPI), factorisée hors de l'endpoint
+    pour rester testable unitairement — même principe que `_flr_threshold`
+    ci-dessus. `organe_vol` est toujours > 0 en pratique côté appelant (fallback
+    par défaut si aucune segmentation, voir get_volumetrie), donc pas de garde
+    contre la division par zéro ici.
+    """
+    complexity = None
+    if renal_score:
+        digits = "".join(ch for ch in renal_score if ch.isdigit())
+        score = int(digits) if digits else None
+        if score is not None:
+            complexity = "simple" if score <= 6 else ("intermediaire" if score <= 9 else "complexe")
+    # Volume de parenchyme rénal préservé : en néphrectomie partielle, le résidu fonctionnel
+    # est le rein opéré amputé de la résection ; en tumeur complexe (RENAL ≥ 10) orientée
+    # néphrectomie totale, seul le rein controlatéral (~50% du DFG total) subsiste.
+    if complexity == "complexe":
+        preserved_pct = 0.0
+        dfg_predicted = round(dfg_preop * 0.5, 1) if dfg_preop else None
+    else:
+        preserved_pct = round((organe_vol - resected) / organe_vol * 100, 1)
+        dfg_predicted = round(dfg_preop * preserved_pct / 100, 1) if dfg_preop else None
+    return {
+        "renal_score": renal_score,
+        "renal_complexity": complexity,
+        "preserved_parenchyma_pct": preserved_pct,
+        "dfg_preop_ml_min": dfg_preop,
+        "dfg_predicted_ml_min": dfg_predicted,
+    }
+
+
 @router.get("/patients/{patient_id}/volumetrie", response_model=VolumetrieResponse)
 async def get_volumetrie(patient_id: str, request: Request, margin_cm: float = 1.0, is_cirrhotic: bool = False,
                          renal_score: Optional[str] = None, dfg_preop: Optional[float] = None,
@@ -65,29 +100,7 @@ async def get_volumetrie(patient_id: str, request: Request, margin_cm: float = 1
             "flr_bw_pct": round(remnant_pct * 0.7 / 70, 2), "bsa_m2": round(bsa_val, 2),
         })
     elif p.specialty == "urologie":
-        # Néphrométrie RENAL : complexité → orientation néphrectomie partielle vs totale.
-        complexity = None
-        if renal_score:
-            digits = "".join(ch for ch in renal_score if ch.isdigit())
-            score = int(digits) if digits else None
-            if score is not None:
-                complexity = "simple" if score <= 6 else ("intermediaire" if score <= 9 else "complexe")
-        # Volume de parenchyme rénal préservé : en néphrectomie partielle, le résidu fonctionnel
-        # est le rein opéré amputé de la résection ; en tumeur complexe (RENAL ≥ 10) orientée
-        # néphrectomie totale, seul le rein controlatéral (~50% du DFG total) subsiste.
-        if complexity == "complexe":
-            preserved_pct = 0.0
-            dfg_predicted = round(dfg_preop * 0.5, 1) if dfg_preop else None
-        else:
-            preserved_pct = round((organe_vol - resected) / organe_vol * 100, 1)
-            dfg_predicted = round(dfg_preop * preserved_pct / 100, 1) if dfg_preop else None
-        result.update({
-            "renal_score": renal_score,
-            "renal_complexity": complexity,
-            "preserved_parenchyma_pct": preserved_pct,
-            "dfg_preop_ml_min": dfg_preop,
-            "dfg_predicted_ml_min": dfg_predicted,
-        })
+        result.update(_renal_nephrometry(renal_score, dfg_preop, organe_vol, resected))
 
     db.add(models.VolumetrieResult(
         id=str(uuid.uuid4()), patient_id=patient_id, organ_volume_ml=result["organ_volume_ml"],
