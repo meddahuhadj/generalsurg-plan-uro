@@ -1,0 +1,46 @@
+# render.yaml — Blueprint Render (plan gratuit)
+# ==============================================================================
+# Déploiement "démo gratuite, zéro carte bancaire" d'un seul service qui sert
+# à la fois le frontend (index.html/assets, déjà servi par backend/main.py) et
+# l'API FastAPI, construit depuis Dockerfile.render (voir ce fichier pour le
+# détail des compromis : pas de TotalSegmentator/torch, pas d'Orthanc/Postgres
+# dédiés, 1 seul worker, stockage éphémère).
+#
+# Utilisation : sur render.com → New → Blueprint → connecter ce dépôt Git.
+# Render détecte ce fichier automatiquement et propose de créer le service
+# ci-dessous. Aucune valeur secrète à saisir : JWT_SECRET est généré
+# automatiquement par Render (generateValue).
+#
+# Pour une stack complète sans compromis (segmentation IA réelle, PACS Orthanc,
+# PostgreSQL persistant), voir docker-compose.yml + DEPLOYMENT.md à la place.
+
+services:
+  - type: web
+    name: generalsurg-plan-demo
+    runtime: docker
+    dockerfilePath: ./Dockerfile.render
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      # development (pas production) : ce déploiement gratuit garde les
+      # comptes de démo seedés (dr.hadj/dr.benali) pour que la démo soit
+      # utilisable sans étape d'inscription — cohérent avec le bandeau
+      # "prototype de démonstration" déjà affiché partout dans l'app.
+      - key: APP_ENV
+        value: development
+      - key: SEED_DEMO_USERS
+        value: "true"
+      - key: JWT_SECRET
+        generateValue: true
+      # Remplacez par l'URL réelle si vous renommez le service (Render dérive
+      # l'URL publique de "name" ci-dessus : https://<name>.onrender.com).
+      - key: ALLOWED_ORIGINS
+        value: https://generalsurg-plan-demo.onrender.com
+      - key: LOG_LEVEL
+        value: INFO
+      # Pas de DATABASE_URL défini : bascule automatique sur SQLite local
+      # (voir backend/db.py) — suffisant pour une démo, mais réinitialisé à
+      # chaque redéploiement (pas de disque persistant sur le plan gratuit).
+      # Ajoutez un service Postgres Render (payant au-delà de sa période
+      # d'essai gratuite) et une variable DATABASE_URL ici si la persistance
+      # des patients/audit compte pour votre usage.

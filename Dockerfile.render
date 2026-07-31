@@ -1,0 +1,54 @@
+# ==============================================================================
+# Dockerfile.render — variante allégée pour le plan gratuit de Render
+# ==============================================================================
+# Différences avec le Dockerfile principal (VPS/docker-compose.yml complet) :
+#   - PAS de requirements-segmentation.txt (TotalSegmentator + torch) : trop
+#     lourd pour les 512 Mo RAM / 0.1 vCPU du plan gratuit Render. L'app le
+#     supporte nativement : backend/routers/dicom.py importe segmentation_service
+#     dans un try/except et bascule REAL_SEGMENTATION_AVAILABLE=False si absent
+#     — la segmentation IA réelle est simplement indisponible, l'estimation
+#     procédurale (volumétrie/analyse) continue de fonctionner normalement.
+#   - Écoute sur $PORT (fourni dynamiquement par Render), pas un port fixe.
+#   - 1 seul worker Uvicorn (4 workers dupliqueraient la RAM déjà limitée).
+#   - Pas d'Orthanc/Postgres/Caddy : un seul service Render sert à la fois le
+#     backend et le frontend statique (index.html/assets déjà servis par
+#     backend/main.py, voir _FRONTEND_ASSETS_DIR).
+#
+# Sert de secours "vraiment gratuit, zéro carte bancaire" en attendant un VPS
+# ou une VM Oracle Cloud Always Free qui ferait tourner la stack complète
+# sans aucun de ces compromis (voir docker-compose.yml + DEPLOYMENT.md).
+
+FROM python:3.11-slim-bookworm
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    DEBIAN_FRONTEND=noninteractive \
+    APP_HOME=/app
+
+WORKDIR $APP_HOME
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libpq-dev \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY backend/requirements.txt $APP_HOME/backend/requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r $APP_HOME/backend/requirements.txt
+
+COPY backend/ $APP_HOME/backend/
+COPY index.html manifest.webmanifest sw.js favicon.ico $APP_HOME/
+COPY assets/ $APP_HOME/assets/
+COPY i18n/ $APP_HOME/i18n/
+
+RUN groupadd -g 10001 surgadmin && \
+    useradd -u 10001 -g surgadmin -s /bin/bash -m surgadmin && \
+    chown -R surgadmin:surgadmin $APP_HOME && \
+    mkdir -p /tmp/storage && chown -R surgadmin:surgadmin /tmp/storage
+
+USER surgadmin
+
+# Pas d'EXPOSE/HEALTHCHECK fixes ici : Render assigne $PORT dynamiquement et
+# fait son propre health check HTTP (voir render.yaml: healthCheckPath).
+CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-10000} --workers 1"]

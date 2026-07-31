@@ -1,0 +1,12 @@
+.venv
+.git
+__pycache__
+*.pyc
+storage/
+pbdtest_reports/
+generalsurg.db
+*.db
+.env
+.env.*
+!.env.example
+node_modules
