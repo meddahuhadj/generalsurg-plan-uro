@@ -577,6 +577,7 @@
             const isHBP = state.mod === 'hbp';
             const isColorectal = state.mod === 'colorectal';
             const isThoracique = state.mod === 'thoracique';
+            const isUrologie = state.mod === 'urologie';
 
             // Calcul volumétrie depuis le volume courant — priorité au volume RÉEL de segmentation
             // (TotalSegmentator, via realMeshGroup) s'il est chargé, sinon estimation par voxel-counting.
@@ -599,6 +600,10 @@
               childPugh: isHBP ? 'A5' : null,
               crm: isColorectal ? 'Négatif (>1mm)' : null,
               vems: isThoracique ? '82%' : null,
+              renal: isUrologie ? '8x' : null,
+              pirads: isUrologie ? '4' : null,
+              gleason: isUrologie ? '3+4 (ISUP 2)' : null,
+              dfg: isUrologie ? '68' : null,
             };
             state.mpr._stagingData = stagingData;
 
@@ -659,6 +664,32 @@
       </div>
     </div>` : ''}
 
+    ${isUrologie ? `<div class="staging-section">
+      <div class="staging-section-title">${I18N.t('staging.urologyParams')}</div>
+      <div class="staging-field">
+        <label>${I18N.t('staging.renalField')}</label>
+        <select id="stg-renal" onchange="updateStagingDecision()">
+          ${['4a','4x','5a','5x','6a','6x','7a','7x','8a','8x','9a','9x','10a','10x','11a','11x','12a','12x'].map(v => `<option ${stagingData.renal === v ? 'selected' : ''}>${v}</option>`).join('')}
+        </select>
+      </div>
+      <div class="staging-field">
+        <label>${I18N.t('staging.piradsField')}</label>
+        <select id="stg-pirads" onchange="updateStagingDecision()">
+          ${['1','2','3','4','5'].map(v => `<option ${stagingData.pirads === v ? 'selected' : ''}>${v}</option>`).join('')}
+        </select>
+      </div>
+      <div class="staging-field">
+        <label>${I18N.t('staging.gleasonField')}</label>
+        <select id="stg-gleason" onchange="updateStagingDecision()">
+          ${['3+3 (ISUP 1)','3+4 (ISUP 2)','4+3 (ISUP 3)','4+4 (ISUP 4)','4+5 / 5+4 / 5+5 (ISUP 5)'].map(v => `<option ${stagingData.gleason === v ? 'selected' : ''}>${v}</option>`).join('')}
+        </select>
+      </div>
+      <div class="staging-field">
+        <label>${I18N.t('staging.dfgField')}</label>
+        <input id="stg-dfg" type="text" value="${stagingData.dfg || '68'}" onchange="updateStagingDecision()">
+      </div>
+    </div>` : ''}
+
     <div class="staging-section">
       <div class="staging-section-title">${I18N.t('staging.volumetryTitle')} ${organVolIsReal
                 ? `<span style="font-size:9px;font-weight:700;color:#22c55e;background:#22c55e22;padding:1px 6px;border-radius:8px;margin-left:4px">${I18N.t('staging.volumetryRealBadge')}</span>`
@@ -700,6 +731,10 @@
             const child = document.getElementById('stg-child')?.value;
             const crm = document.getElementById('stg-crm')?.value;
             const vemsStr = document.getElementById('stg-vems')?.value;
+            const renal = document.getElementById('stg-renal')?.value;
+            const pirads = document.getElementById('stg-pirads')?.value;
+            const gleason = document.getElementById('stg-gleason')?.value;
+            const dfgStr = document.getElementById('stg-dfg')?.value;
 
             // Sauvegarde
             if (state.mpr._stagingData) {
@@ -708,6 +743,10 @@
               if (child) state.mpr._stagingData.childPugh = child;
               if (crm) state.mpr._stagingData.crm = crm;
               if (vemsStr) state.mpr._stagingData.vems = vemsStr;
+              if (renal) state.mpr._stagingData.renal = renal;
+              if (pirads) state.mpr._stagingData.pirads = pirads;
+              if (gleason) state.mpr._stagingData.gleason = gleason;
+              if (dfgStr) state.mpr._stagingData.dfg = dfgStr;
             }
 
             const criteria = [];
@@ -775,6 +814,56 @@
                 resectable = false;
               } else if (!isNaN(vems) && vems < 60) {
                 criteria.push({ ok: 'warn', text: `VEMS ${vemsStr} — fonction limite, pré-habilitation suggérée` });
+              }
+            }
+
+            // Urologie — score RENAL (néphrométrie)
+            if (renal) {
+              const renalNum = parseInt(renal.replace(/[^0-9]/g, ''), 10);
+              if (!isNaN(renalNum) && renalNum >= 10) {
+                criteria.push({ ok: false, text: `Score RENAL ${renal} ≥ 10 — tumeur complexe : néphrectomie totale ou exérèse par expert, discuter l'option partielle` });
+              } else if (!isNaN(renalNum) && renalNum >= 7) {
+                criteria.push({ ok: 'warn', text: `Score RENAL ${renal} — complexité intermédiaire (7-9) : néphrectomie partielle possible par opérateur entraîné` });
+              } else if (!isNaN(renalNum)) {
+                criteria.push({ ok: true, text: `Score RENAL ${renal} — tumeur simple (≤6) : néphrectomie partielle adaptée` });
+              }
+            }
+
+            // Urologie — PI-RADS (suspicion prostatique)
+            if (pirads) {
+              const pir = parseInt(pirads, 10);
+              if (!isNaN(pir) && pir >= 4) {
+                criteria.push({ ok: 'warn', text: `PI-RADS ${pirads} — suspicion significative : biopsie par fusion IRM/écho avant décision chirurgicale` });
+              } else if (!isNaN(pir) && pir === 3) {
+                criteria.push({ ok: true, text: `PI-RADS ${pirads} — lésion intermédiaire : biopsie à discuter selon contexte` });
+              } else if (!isNaN(pir)) {
+                criteria.push({ ok: true, text: `PI-RADS ${pirads} — faible suspicion de cancer significatif` });
+              }
+            }
+
+            // Urologie — Gleason / ISUP
+            if (gleason) {
+              if (gleason.includes('ISUP 5') || gleason.includes('ISUP 4')) {
+                criteria.push({ ok: 'warn', text: `Gleason ${gleason} — maladie à haut risque : prostatectomie élargie (curage ilio-obturateur) ou radio-hormonothérapie` });
+              } else if (gleason.includes('ISUP 3')) {
+                criteria.push({ ok: 'warn', text: `Gleason ${gleason} — risque intermédiaire défavorable : discuter stratégie en réunion de concertation` });
+              } else if (gleason.includes('ISUP 2')) {
+                criteria.push({ ok: true, text: `Gleason ${gleason} — risque intermédiaire favorable : prostatectomie radicale possible` });
+              } else if (gleason.includes('ISUP 1')) {
+                criteria.push({ ok: true, text: `Gleason ${gleason} — risque faible : surveillance active envisageable selon âge/comorbidités` });
+              }
+            }
+
+            // Urologie — DFG préopératoire (réserve rénale)
+            if (dfgStr) {
+              const dfg = parseFloat(dfgStr);
+              if (!isNaN(dfg) && dfg < 30) {
+                criteria.push({ ok: false, text: `DFG ${dfgStr} < 30 ml/min — insuffisance rénale avancée : néphrectomie partielle impérative ou alternative` });
+                if (T === 'T1a' || T === 'T1b') resectable = false;
+              } else if (!isNaN(dfg) && dfg < 60) {
+                criteria.push({ ok: 'warn', text: `DFG ${dfgStr} — réserve rénale limitée : privilégier le clampage sélectif et minimiser l'ischémie` });
+              } else if (!isNaN(dfg)) {
+                criteria.push({ ok: true, text: `DFG ${dfgStr} — fonction rénale conservée, néphrectomie partielle confortable` });
               }
             }
 

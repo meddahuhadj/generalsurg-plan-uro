@@ -153,6 +153,10 @@
             }
 
             function currentLocale() { return locale; }
+            function currentIntl() {
+              const dict = dictCache[locale] || I18N_EMBEDDED[locale];
+              return (dict && dict.meta && dict.meta.intl) || 'en-US';
+            }
             function reportMissing() { return Array.from(missing); }
 
             function flattenObj(obj, prefix) {
@@ -166,7 +170,7 @@
             }
 
             return {
-              SUPPORTED, t, setLocale, currentLocale, detectBrowserLocale, applyTranslations,
+              SUPPORTED, t, setLocale, currentLocale, currentIntl, detectBrowserLocale, applyTranslations,
               languageName, formatDate, formatNumber, reportMissing, getOverrides,
               setOverride(loc, key, value) {
                 const ov = getOverrides();
@@ -398,35 +402,44 @@
             urologie: {
               id: 'urologie', name: 'Chirurgie Urologique', short: 'Urologie', icon: '🫘',
               color: '#14b8a6', colorRgb: '20,184,166',
-              desc: 'Planification de néphrectomies, prostatectomies et cystectomies avec cartographie PI-RADS et score RENAL.',
-              procedures: ['Néphrectomie partielle', 'Néphrectomie totale élargie', 'Prostatectomie radicale', 'Cystectomie radicale + dérivation', 'Urétéroscopie / NLPC'],
+              desc: 'Planification de néphrectomies, prostatectomies, cystectomies et chirurgie des voies urinaires avec cartographie PI-RADS, score RENAL et préservation du parenchyme rénal.',
+              procedures: ['Néphrectomie partielle robot-assistée', 'Néphrectomie totale élargie', 'Prostatectomie radicale robot-assistée', 'Cystectomie radicale + dérivation', 'Urétéroscopie souple / NLPC', 'Néphrolithotomie percutanée'],
               metrics: [
-                { key: 'RENAL', label: 'Score RENAL', val: '8x (élevé)', st: 'warn' },
-                { key: 'Taille', label: 'Taille tumorale', val: '4.1 cm', st: 'warn' },
+                { key: 'RENAL', label: 'Score RENAL', val: '8x (intermédiaire)', st: 'warn' },
+                { key: 'Taille', label: 'Taille tumorale', val: '4.1 cm (cT1b)', st: 'warn' },
                 { key: 'DFG', label: 'DFG (MDRD)', val: '68 ml/min/1.73m²', st: 'ok' },
-                { key: 'PSA', label: 'PSA total', val: '—', st: 'ok' }
+                { key: 'PSA', label: 'PSA total', val: '7.2 ng/mL', st: 'ok' },
+                { key: 'PI-RADS', label: 'PI-RADS v2.1', val: '4/5', st: 'warn' },
+                { key: 'Gleason', label: 'Gleason / ISUP', val: '3+4 (ISUP 2)', st: 'ok' }
               ],
               structures: [
                 { name: 'Rein droit', open: true, children: ['Pôle supérieur', 'Pôle moyen', 'Pôle inférieur', 'Sinus rénal', 'Bassinet', 'Calices'] },
-                { name: 'Voies excrétrices', open: false, children: ['Uretère lombaire', 'Uretère iliaque', 'Uretère pelvien', 'Jonction pyélo-urétérale'] },
-                { name: 'Vaisseaux rénaux', open: true, children: ['Artère rénale principale', 'Artère polaire sup.', 'Artère polaire inf.', 'Veine rénale', 'Veine gonadique'] },
-                { name: 'Pelvis / Prostate', open: false, children: ['Vessie', 'Prostate', 'Vésicules séminales', 'Bandelettes neuro-vasculaires'] }
+                { name: 'Rein gauche', open: false, children: ['Pôle supérieur', 'Pôle moyen', 'Pôle inférieur', 'Sinus rénal', 'Bassinet', 'Calices'] },
+                { name: 'Vaisseaux rénaux', open: true, children: ['Artère rénale principale', 'Artère polaire sup.', 'Artère polaire inf.', 'Veine rénale', 'Veine gonadique dr.', 'Aorte abdominale', 'VCI'] },
+                { name: 'Voies excrétrices', open: false, children: ['Uretère lombaire', 'Uretère iliaque', 'Uretère pelvien', 'Jonction pyélo-urétérale', 'Uretère intramural'] },
+                { name: 'Pelvis / Prostate', open: false, children: ['Vessie', 'Trigone vésical', 'Prostate', 'Apex prostatique', 'Vésicules séminales', 'Bandelettes neuro-vasculaires'] },
+                { name: 'Ganglions', open: false, children: ['Hilaire rénal', 'Para-aortique', 'Inter-aortico-cave', 'Iliaque externe', 'Obturateur'] }
               ],
               implants: [
                 { name: 'Clip Hem-o-lok XL', ref: 'HML-XL', tags: ['vasculaire', 'pédicule rénal'], sel: true },
-                { name: 'Stent urétéral JJ 6Fr', ref: 'JJ-6-26', tags: ['drainage', 'urétéral'], sel: false },
-                { name: 'Agent hémostatique Surgicel', ref: 'SURG-FIB', tags: ['hémostase', 'tranche section'], sel: true }
+                { name: 'Stent urétéral JJ 6Fr', ref: 'JJ-6-26', tags: ['drainage', 'urétéral'], sel: true },
+                { name: 'Agent hémostatique Surgicel', ref: 'SURG-FIB', tags: ['hémostase', 'tranche section'], sel: true },
+                { name: 'Sonde de Foley 18Fr', ref: 'FOLEY-18-CC', tags: ['drainage', 'vésical'], sel: false },
+                { name: 'Bistouri bipolaire (Ligasure 37cm)', ref: 'LS-37-RD', tags: ['énergie', 'section'], sel: false },
+                { name: 'Drain aspiratif Blake 19Fr', ref: 'BLK-19-R', tags: ['drainage'], sel: false }
               ],
               checklist: [
                 { done: true, text: '<strong>Uro-TDM injecté</strong> — Cartographie vasculaire et score RENAL' },
                 { done: true, text: '<strong>IRM prostatique multiparamétrique</strong> — Score PI-RADS (si prostate)' },
                 { done: true, text: '<strong>Créatinine, DFG, ECBU</strong> — Fonction rénale et stérilité urinaire' },
+                { done: true, text: '<strong>PSA + toucher rectal</strong> — Bilan prostatique (si concerné)' },
                 { done: false, text: '<strong>Scintigraphie rénale (MAG3)</strong> — Fonction séparée si limite' },
+                { done: false, text: '<strong>Biopsie prostatique / fusion IRM</strong> — Confirmation histologique (Gleason)' },
                 { done: false, text: '<strong>Consultation anesthésie</strong> — Score ASA, gestion anticoagulants' }
               ],
-              patient: { id: '59274-URO', nom: 'Ziani, Karim', age: 61, sexe: 'M', poids: 79, taille: 174, diag: 'Tumeur rénale droite cT1b, RENAL 8x', urg: 'orange' },
-              aiChips: ['Score RENAL détaillé ?', 'Risque hémorragique au clampage ?', 'Marge chirurgicale attendue ?', 'Fonction rénale post-op prédite ?'],
-              hubProcs: ['Néphrectomie partielle', 'Prostatectomie', 'Cystectomie', 'NLPC']
+              patient: { id: '59274-URO', nom: 'Ziani, Karim', age: 61, sexe: 'M', poids: 79, taille: 174, diag: 'Tumeur rénale droite cT1b RENAL 8x + suspicion prostatique PI-RADS 4', urg: 'orange' },
+              aiChips: ['Score RENAL détaillé ?', 'Risque hémorragique au clampage ?', 'Marge chirurgicale attendue ?', 'Fonction rénale post-op prédite ?', 'PI-RADS 4 : biopsie avant chirurgie ?', 'Ischémie chaude vs froide ?'],
+              hubProcs: ['Néphrectomie partielle', 'Prostatectomie robot', 'Cystectomie', 'NLPC', 'Urétéroscopie']
             }
           };
 
@@ -647,7 +660,7 @@
             thyroide: { axis: { x: 1.3, y: 0.55, z: 0.5 }, lobes: 2, tubular: 0.25 },
             thoracique: { axis: { x: 0.85, y: 1.5, z: 0.9 }, lobes: 5, tubular: 0.6 },
             cardiaque: { axis: { x: 1.0, y: 1.15, z: 1.0 }, lobes: 4, tubular: 0.65 },
-            urologie: { axis: { x: 0.75, y: 1.2, z: 0.6 }, lobes: 3, tubular: 0.5 }
+            urologie: { axis: { x: 0.72, y: 1.35, z: 0.55 }, lobes: 3, tubular: 0.45 }
           };
 
           // Words that hint a substructure should be rendered as a tube (vessel/nerve/duct)

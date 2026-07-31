@@ -209,6 +209,12 @@ class VolumetrieResponse(BaseModel):
     flr_safe: Optional[bool] = None
     flr_bw_pct: Optional[float] = None
     bsa_m2: Optional[float] = None
+    # Urology-specific (néphrométrie RENAL + préservation du parenchyme)
+    renal_score: Optional[str] = None
+    renal_complexity: Optional[str] = None
+    preserved_parenchyma_pct: Optional[float] = None
+    dfg_preop_ml_min: Optional[float] = None
+    dfg_predicted_ml_min: Optional[float] = None
 
 
 # ---------------------------------------------------------------------------

@@ -30,6 +30,7 @@ import os
 import logging
 import time
 import traceback as _traceback
+from contextlib import asynccontextmanager
 from pathlib import Path
 from datetime import datetime
 
@@ -138,7 +139,37 @@ elif _JWT_SECRET_IS_DEFAULT or SEED_DEMO_USERS:
                    "pour un vrai patient. Positionnez APP_ENV=production dans .env "
                    "pour que ces réglages non sûrs bloquent le démarrage.", APP_ENV)
 
-app = FastAPI(title="GeneralSurg Plan MIMO — Backend", version="2.1.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    if SEED_DEMO_USERS:
+        db = next(get_db())
+        try:
+            if not db.query(models.User).first():
+                # dr.hadj est seedé en rôle "admin" (uniquement pour que /audit, réservé aux
+                # rôles admin/dpo depuis le durcissement RBAC, reste testable en dev) — à
+                # remplacer par une vraie attribution de rôles avant toute mise en production.
+                for username, full_name, role in [("dr.hadj", "Dr. Hadj", "admin"), ("dr.benali", "Dr. Benali", "surgeon")]:
+                    db.add(models.User(
+                        username=username, full_name=full_name, role=role,
+                        hashed_password=sec.hash_password("changeme"),
+                    ))
+                db.commit()
+                logger.info("Utilisateurs de démonstration créés (dr.hadj / dr.benali, mdp: changeme). "
+                            "À supprimer avant toute mise en production.")
+        finally:
+            db.close()
+    # Nettoyage initial du stockage DICOM (TTL + quota)
+    try:
+        import storage_cleanup
+        result = storage_cleanup.run_cleanup()
+        logger.info("Nettoyage DICOM initial: %s", result)
+    except Exception as e:
+        logger.warning("Nettoyage DICOM initial échoué: %s", e)
+    yield
+
+
+app = FastAPI(title="GeneralSurg Plan MIMO — Backend", version="2.1.0", lifespan=lifespan)
 
 # ---------------------------------------------------------------------------
 # Middleware correlation ID — chaque requête reçoit un ID unique tracable
@@ -343,38 +374,6 @@ if RESEARCH_MODE:
 else:
     logger.info("Mode clinique (RESEARCH_MODE=false) — %d services exploratoires non chargés",
                 len(_exploratory_services))
-
-
-# ---------------------------------------------------------------------------
-# Démarrage : création des tables si absentes + seed démo (dev uniquement)
-# ---------------------------------------------------------------------------
-@app.on_event("startup")
-def on_startup():
-    init_db()
-    if SEED_DEMO_USERS:
-        db = next(get_db())
-        try:
-            if not db.query(models.User).first():
-                # dr.hadj est seedé en rôle "admin" (uniquement pour que /audit, réservé aux
-                # rôles admin/dpo depuis le durcissement RBAC, reste testable en dev) — à
-                # remplacer par une vraie attribution de rôles avant toute mise en production.
-                for username, full_name, role in [("dr.hadj", "Dr. Hadj", "admin"), ("dr.benali", "Dr. Benali", "surgeon")]:
-                    db.add(models.User(
-                        username=username, full_name=full_name, role=role,
-                        hashed_password=sec.hash_password("changeme"),
-                    ))
-                db.commit()
-                logger.info("Utilisateurs de démonstration créés (dr.hadj / dr.benali, mdp: changeme). "
-                            "À supprimer avant toute mise en production.")
-        finally:
-            db.close()
-    # Nettoyage initial du stockage DICOM (TTL + quota)
-    try:
-        import storage_cleanup
-        result = storage_cleanup.run_cleanup()
-        logger.info("Nettoyage DICOM initial: %s", result)
-    except Exception as e:
-        logger.warning("Nettoyage DICOM initial échoué: %s", e)
 
 
 # ---------------------------------------------------------------------------

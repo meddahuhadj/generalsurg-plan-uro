@@ -66,6 +66,9 @@
                 } else if (id === 'thoracique') {
                   if (btnD1) { btnD1.innerHTML = '🔊 Dictée : « Lobectomie pulmonaire supérieure droite thoracoscopique VATS »'; btnD1.setAttribute('onclick', "simulateCcamDictation('lobectomie')"); }
                   if (btnD2) { btnD2.innerHTML = '🔊 Dictée : « Segmentectomie anatomique S6 avec curage radical médiastinal »'; btnD2.setAttribute('onclick', "simulateCcamDictation('segmentectomie_thor')"); }
+                } else if (id === 'urologie') {
+                  if (btnD1) { btnD1.innerHTML = '🔊 Dictée : « Néphrectomie partielle droite robot-assistée avec clampage sélectif de l\'artère polaire »'; btnD1.setAttribute('onclick', "simulateCcamDictation('nephrectomie_partielle')"); }
+                  if (btnD2) { btnD2.innerHTML = '🔊 Dictée : « Prostatectomie radicale robot-assistée avec préservation des bandelettes neurovasculaires »'; btnD2.setAttribute('onclick', "simulateCcamDictation('prostatectomie')"); }
                 } else {
                   if (btnD1) { btnD1.innerHTML = '🔊 Dictée : « Hépatectomie droite réglée par laparotomie avec clampage pédiculaire de 18 min »'; btnD1.setAttribute('onclick', "simulateCcamDictation('hepatectomie')"); }
                   if (btnD2) { btnD2.innerHTML = '🔊 Dictée : « Cholécystectomie cœlioscopique pour lithiase biliaire symptomatique »'; btnD2.setAttribute('onclick', "simulateCcamDictation('cholecystectomie')"); }
@@ -96,6 +99,7 @@
             if (p.id === '48392-HEP') planningInfo = `${room1} • 10:30 - 14:30 (${I18N.t('sidebar.statusOngoing')})`;
             else if (p.id === '33815-TH') planningInfo = `${room1} • 08:00 - 10:00 (${I18N.t('sidebar.statusDone')})`;
             else if (p.id === '51027-CR') planningInfo = `${room1} • 15:00 - 18:00 (${I18N.t('sidebar.statusPlanned')})`;
+            else if (p.id === '59274-URO') planningInfo = `${room1} • 13:30 - 17:00 (${I18N.t('sidebar.statusPlanned')})`;
             else planningInfo = I18N.t('sidebar.notScheduledToday');
 
             // Patient card
@@ -280,7 +284,7 @@
             let tissue = 0;
             for (let i = 0; i < state.mpr.volume.length; i++) if (state.mpr.volume[i] > 15) tissue++;
             const fracTissue = tissue / (N * N * N);
-            const refML = { hbp: 1450, colorectal: 350, gastrique: 1100, thyroide: 20, thoracique: 4500, cardiaque: 300 }[state.mod] || 500;
+            const refML = { hbp: 1450, colorectal: 350, gastrique: 1100, thyroide: 20, thoracique: 4500, cardiaque: 300, urologie: 150 }[state.mod] || 500;
             // Normalise against the expected fraction for a centred ellipsoid (~0.28) so refML stays the anchor.
             return refML * (fracTissue / 0.28);
           }
@@ -770,6 +774,7 @@
               executeVoiceAction(reply);
               const clean = reply.replace(/\[ACTION:[a-z_]+\]/g, '').trim();
               setChatMsg(bubbleId, clean || reply);
+              speakAIReply(clean || reply);
             }).catch(err => setChatMsg(bubbleId, '⚠️ ' + err.message));
           }
 
@@ -818,6 +823,7 @@
               executeVoiceAction(full);
               const clean = full.replace(/\[ACTION:[a-z_]+\]/g, '').trim();
               setGBMsg(bubbleId, escapeHtml(clean || full));
+              speakAIReply(clean || full);
               state.live.history.push({ role: 'model', text: clean || full });
               if (state.live.history.length > 16) state.live.history.splice(0, state.live.history.length - 16);
             } catch (err) {
@@ -904,6 +910,13 @@
               { kw: ['hémorragie', 'clampage', 'saignement'], a: "Le risque hémorragique au déclampage après néphrectomie partielle dépend de la qualité de l'hémostase de la tranche de section et du temps d'ischémie chaude. Un temps de clampage prolongé (>25-30 min) augmente le risque d'insuffisance rénale post-opératoire sans nécessairement réduire le risque hémorragique." },
               { kw: ['marge', 'chirurgicale'], a: "L'objectif en néphrectomie partielle est une marge de résection négative (R0), même minime — une marge positive n'implique pas systématiquement une récidive mais justifie une surveillance rapprochée. La marge attendue dépend directement du score RENAL et de la proximité de la tumeur avec le sinus rénal." },
               { kw: ['fonction rénale', 'dfg', 'post-op'], a: "La fonction rénale post-opératoire dépend du volume de parenchyme sain préservé et du temps d'ischémie chaude. Une néphrectomie partielle préserve mieux le DFG à long terme qu'une néphrectomie totale, particulièrement chez les patients avec DFG pré-opératoire déjà réduit ou rein unique." },
+              { kw: ['pi-rads', 'irm', 'prostate', 'mpmri'], a: "Le PI-RADS v2.1 classe la suspicion de cancer prostatique significatif à l'IRM multiparamétrique : 1-2 = très peu probable, 3 = intermédiaire, 4 = probable, 5 = très probable. Un score ≥4 justifie une biopsie ciblée par fusion IRM/échographie ; le score 3 doit être discuté (biopsie selon le contexte)." },
+              { kw: ['gleason', 'isup', 'agressivité'], a: "Le grade de Gleason est la somme des deux grades les plus représentés (ex. 3+4). Le grade ISUP (1 à 5) regroupe les scores : 3+3=1, 3+4=2, 4+3=3, 4+4 ou 3+5=4, 4+5/5+4/5+5=5. Un ISUP ≥4 signe une maladie à haut risque, souvent traitée par prostatectomie radicale élargie ou radiothérapie + hormonothérapie." },
+              { kw: ['psa', 'dépistage', 'toucher'], a: "Un PSA >4 ng/mL est classiquement l'étage d'alerte mais doit être interprété selon l'âge, le volume prostatique et la cinétique (vélocité >0,75 ng/mL/an et temps de doublement <10 mois sont péjoratifs). Le toucher rectal garde sa place (nodule, induration) et oriente la biopsie avec l'IRM." },
+              { kw: ['ischémie', 'chaude', 'froide', 'clampage'], a: "En néphrectomie partielle, l'ischémie chaude (clampage simple de l'artère) doit rester <20-25 min pour limiter les lésions tubulaires ; l'ischémie froide (perfusion de sérum glacé ou clampage sélectif de la tumeur) est préférée pour les tumeurs complexes ou les reins uniques. Le clampage sélectif ou « off-clamp » est possible pour les tumeurs exophytiques simples." },
+              { kw: ['fistule', 'urinaire', 'fuite'], a: "La fistule urinaire post-néphrectomie partielle (fuite du système collecteur sur la tranche de section) survient dans 1-4% des cas. Elle se traite le plus souvent par drainage percutané + sonde JJ de dérivation, en s'assurant de la qualité de la suture de l'étui caliciel per-opératoire." },
+              { kw: ['cystectomie', 'dérivation', 'stomie', 'néovessie'], a: "La cystectomie radicale est indiquée pour les tumeurs de vessie envahissant le muscle (T2+) et les récidives de tumeurs à haut risque. La dérivation urinaire peut être incontinente (Bricker) ou continente (néovessie, de préférence chez l'homme, sphincter préservé, tumeur non située au col). Le curage pelvien bilatéral (obturateur + iliaque externe/interne) fait partie de la procédure." },
+              { kw: ['urétéroscopie', 'nlpc', 'lithiase', 'calcul'], a: "La stratégie du calcul rénal dépend de sa taille et de sa localisation : <10-15 mm au rein ou à l'uretère = urétéroscopie souple ou ESWL ; ≥20 mm = NLPC (néphrolithotomie percutanée) recommandée, surtout si calcul coralliforme. Le scanner sans injection mesure précisément la densité (UH) et la taille pour trancher." }
             ],
           };
 
@@ -952,12 +965,13 @@
 - Viabilité myocardique (IRM de stress, scintigraphie) avant revascularisation d'un territoire akinétique.`,
 
             urologie: `EXPERTISE UROLOGIQUE — repères à utiliser quand pertinent :
-- Score de néphrométrie RENAL (Radius, Exophytic/endophytic, Nearness au sinus, Anterior/posterior, Location) : score ≤6 = simple, 7-9 = intermédiaire, ≥10 = complexe — oriente néphrectomie partielle vs totale.
-- Classification de Bosniak pour les kystes rénaux (I à IV, risque de malignité croissant).
-- Score de Gleason / grade ISUP (1 à 5) et PI-RADS v2.1 (IRM prostatique, ≥4 = suspicion significative) pour la prostate.
-- Stadification TNM rénale/prostatique/vésicale selon organe concerné.
-- DFG pré/post-opératoire : anticiper l'impact d'une néphrectomie totale vs partielle sur la fonction rénale à long terme.
-- Complications à évoquer selon la procédure : hémorragie au déclampage, fistule urinaire, incontinence/dysfonction érectile (prostatectomie).`
+- Score de néphrométrie RENAL (Radius, Exophytic/endophytic, Nearness au sinus, Anterior/posterior, Location) : score ≤6 = simple, 7-9 = intermédiaire, ≥10 = complexe — oriente néphrectomie partielle vs totale. Un suffixe x/p précise la position antérieure (x = antéro-postérieur indifférent).
+- Volume rénal fonctionnel : pour toute néphrectomie, évaluer le volume de parenchyme sain préservé (le DFG post-op est grossièrement proportionnel au volume préservé) ; anticiper la fonction du rein controlatéral si néphrectomie totale.
+- Classification de Bosniak pour les kystes rénaux (I à IV, risque de malignité croissant) ; biopsie rénale si doute sur l'histologie (tumeur <3-4cm non caractéristique).
+- Prostate : score de Gleason / grade ISUP (1 à 5), PI-RADS v2.1 (IRM mp, ≥4 = suspicion significative), PSA et sa cinétique, risque de D'Amico (faible/intermédiaire/élevé) pour la stratégie thérapeutique ; la prostatectomie radicale (idéalement robot-assistée) peut être élargie au curage ilio-obturateur si risque ≥5% d'atteinte ganglionnaire (nomogramme de Briganti).
+- Vessie : stade T (Ta/T1 non invasif, T2+ invasif), CIS, grade (bas/haut), risque de récidive/progression selon EAU ; la cystectomie radicale + dérivation (Bricker ou néovessie) est indiquée pour T2+ ou BCG-réfractaire.
+- TNM urologique : rein (T1a <4cm, T1b 4-7cm, T2, T3/4…), prostate (T2 = confiné, T3a/b = extension extraprostatique/vésicules séminales, T4), vessie (T1 sous-muqueux, T2 muscle, T3 graisse, T4 organes adjacents).
+- Complications à évoquer selon la procédure : hémorragie au déclampage, fistule urinaire, incontinence et dysfonction érectile (prostatectomie radicale), insuffisance rénale aiguë (ischémie rénale), lésion uretérale, infection du site opératoire.`
           };
 
           // Instructions de commandes d'action — partagées par TOUS les canaux
@@ -1345,6 +1359,29 @@
 
           function glModel() {
             return document.getElementById('gemini-live-model')?.value || 'gemini-3.1-flash-live-preview';
+          }
+
+          // Synthèse vocale des réponses IA (Web Speech API, 100% navigateur, zéro
+          // dépendance/coût réseau). La langue suit TOUJOURS I18N.currentIntl(), donc la
+          // langue d'interface active choisie par l'utilisateur — jamais une langue codée
+          // en dur — cohérent avec ai.respondInLanguage qui fait déjà suivre le texte de
+          // la réponse. Ne concerne que le chat texte (panneau IA Chat, barre du bas hors
+          // session Gemini Live) : la session Gemini Live temps réel a déjà sa propre voix
+          // audio nativement (voir gl.audioQueue plus bas), il ne faut pas la doubler ici.
+          function speakAIReply(text) {
+            if (!('speechSynthesis' in window) || !text) return;
+            const clean = String(text).replace(/\[ACTION:[a-z_]+\]/g, '').replace(/[*_`#>]/g, '').trim();
+            if (!clean) return;
+            try {
+              window.speechSynthesis.cancel(); // une seule réponse parlée à la fois
+              const utter = new SpeechSynthesisUtterance(clean);
+              utter.lang = I18N.currentIntl();
+              const voices = window.speechSynthesis.getVoices();
+              const voice = voices.find(v => v.lang === utter.lang) ||
+                voices.find(v => v.lang.startsWith(utter.lang.split('-')[0]));
+              if (voice) utter.voice = voice;
+              window.speechSynthesis.speak(utter);
+            } catch (e) { /* best-effort : la voix ne doit jamais bloquer le chat */ }
           }
 
           // Commandes vocales exécutables dans l'app (le prompt système demande à Gemini
@@ -2096,7 +2133,9 @@
               gastrectomie: { code: 'HFMA004 (1520,00 €)', desc: '<b>1. Indication :</b> Adénocarcinome gastrique linitique.<br><b>2. Abord :</b> Laparotomy médiane sus-ombicale.<br><b>3. Geste :</b> Gastrectomie totale D2 avec curage des stations N1 à N6 et splénopancréatectomie préservée.<br><b>4. Anastomose :</b> Œsio-jéjunale sur anse montée en Y de Roux.', sha: '4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e (texte fixe de démonstration, pas un sceau réel)' },
               subtotale: { code: 'HFMA003 (1180,00 €)', desc: '<b>1. Indication :</b> Tumeur antre gastrique.<br><b>2. Abord :</b> Laparoscopie.<br><b>3. Geste :</b> Gastrectomie des 4/5èmes distaux avec curage D1+.<br><b>4. Anastomose :</b> Gastro-jéjunale termino-latérale de type Finsterer.', sha: '9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f (texte fixe de démonstration, pas un sceau réel)' },
               lobectomie: { code: 'GFMA008 (1340,00 €)', desc: '<b>1. Indication :</b> NSCLC lobe supérieur droit.<br><b>2. Abord :</b> Thoracoscopie VATS 3 trocarts.<br><b>3. Geste :</b> Dissection hilaire, agrafage veine et artère pulmonaires du LSD, agrafage bronche lobaire.<br><b>4. Fin d\'intervention :</b> Test d\'étanchéité sous eau négatif, drain thoracique 28Fr en aspiration.', sha: '2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b (texte fixe de démonstration, pas un sceau réel)' },
-              segmentectomie_thor: { code: 'GFFA002 (980,00 €)', desc: '<b>1. Indication :</b> Métastase pulmonaire S6 droit.<br><b>2. Abord :</b> VATS vidéo-assisté.<br><b>3. Geste :</b> Segmentectomie anatomique S6 de Fowler sous guidage par fluorescence ICG.<br><b>4. Hémostase :</b> Aérostase vérifiée au collafilm, drain 24Fr.', sha: '5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d (texte fixe de démonstration, pas un sceau réel)' }
+              segmentectomie_thor: { code: 'GFFA002 (980,00 €)', desc: '<b>1. Indication :</b> Métastase pulmonaire S6 droit.<br><b>2. Abord :</b> VATS vidéo-assisté.<br><b>3. Geste :</b> Segmentectomie anatomique S6 de Fowler sous guidage par fluorescence ICG.<br><b>4. Hémostase :</b> Aérostase vérifiée au collafilm, drain 24Fr.', sha: '5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d (texte fixe de démonstration, pas un sceau réel)' },
+              nephrectomie_partielle: { code: 'JCCB002 (1490,00 €)', desc: '<b>1. Indication :</b> Tumeur rénale droite cT1b (score RENAL 8x).<br><b>2. Abord :</b> Laparoscopie robot-assistée (Da Vinci).<br><b>3. Geste :</b> Néphrectomie partielle droite, clampage sélectif de l\'artère polaire, tumorectomie avec marge de parenchyme sain.<br><b>4. Réparation :</b> Suture de l\'étui caliciel, hémostase de la tranche au Surgicel, sonde JJ 6Fr en place.', sha: '1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b (texte fixe de démonstration, pas un sceau réel)' },
+              prostatectomie: { code: 'JCQA004 (1510,00 €)', desc: '<b>1. Indication :</b> Cancer prostatique localisé intermédiaire (Gleason 3+4, ISUP 2).<br><b>2. Abord :</b> Laparoscopie robot-assistée (Da Vinci).<br><b>3. Geste :</b> Prostatectomie radicale avec préservation bilatérale des bandelettes neurovasculaires.<br><b>4. Fin d\'intervention :</b> Anastomose urétro-vésicale, curage ilio-obturateur bilatéral, sonde de Foley 18Fr.', sha: '2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c (texte fixe de démonstration, pas un sceau réel)' }
             };
 
             const rep = reports[type] || reports.hepatectomie;

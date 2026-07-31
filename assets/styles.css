@@ -377,6 +377,38 @@
       animation: pulse 2s infinite
     }
 
+    /* ── Tiroirs mobiles (sidebar / panneau droit) ──────────────────────────
+   Boutons présents dans le DOM en permanence mais invisibles au-dessus du
+   point de rupture mobile (voir le bloc "Responsive — app shell mobile"
+   plus bas, qui les affiche et transforme .sidebar/.panel-right en tiroirs). */
+    .hamburger-btn,
+    .panel-toggle-btn {
+      display: none
+    }
+
+    .hamburger-btn {
+      background: none;
+      border: none;
+      color: var(--text2);
+      font-size: 18px;
+      padding: 0 12px;
+      cursor: pointer;
+      flex-shrink: 0
+    }
+
+    .mobile-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, .55);
+      z-index: 390
+    }
+
+    body.sidebar-open .mobile-backdrop,
+    body.panel-open .mobile-backdrop {
+      display: block
+    }
+
     /* ── Main Layout ── */
     .main {
       display: flex;
@@ -2360,9 +2392,141 @@
         flex-wrap: wrap;
         justify-content: center
       }
+    }
+
+    /* ── Responsive — app shell mobile (tablette portrait et téléphone) ──────
+   En dessous de 900px, la sidebar et le panneau droit (296/256px fixes)
+   ne peuvent plus coexister avec le viewport 3D/MPR sans le réduire à
+   rien : ils deviennent des tiroirs superposés (position fixed, glissés
+   hors-écran par défaut, ouverts via body.sidebar-open/.panel-open — voir
+   toggleMobileSidebar()/toggleMobilePanel() dans index.html), au lieu
+   d'être simplement masqués (ancien comportement : le panneau droit,
+   avec les onglets Plan/Staging/Implants/IA Chat/Analyse, devenait
+   totalement inaccessible en dessous de 1000px). */
+    @media(max-width:900px) {
+
+      .hamburger-btn,
+      .panel-toggle-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center
+      }
+
+      .brand {
+        width: auto;
+        padding: 0 10px;
+        border-right: none
+      }
+
+      .brand-text {
+        display: none
+      }
+
+      .top-actions {
+        overflow-x: auto;
+        max-width: 38vw;
+        scrollbar-width: thin
+      }
+
+      .top-actions .lang-selector-menu {
+        right: 0;
+        left: auto
+      }
+
+      .workflow-stepper {
+        overflow-x: auto;
+        scrollbar-width: thin
+      }
+
+      .workflow-stepper::-webkit-scrollbar,
+      .top-actions::-webkit-scrollbar {
+        height: 4px
+      }
+
+      /* .main garde overflow:hidden (desktop) : les tiroirs sont en position
+     fixed, sortis du flux, donc .center (flex:1) occupe naturellement
+     toute la largeur restante sans changement supplémentaire ici. */
+      .sidebar {
+        position: fixed;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        width: min(var(--sidebar-w), 84vw);
+        z-index: 400;
+        transform: translateX(-100%);
+        transition: transform .25s ease;
+        box-shadow: 4px 0 24px rgba(0, 0, 0, .4)
+      }
+
+      body.sidebar-open .sidebar {
+        transform: translateX(0)
+      }
 
       .panel-right {
-        display: none !important
+        position: fixed;
+        top: 0;
+        bottom: 0;
+        right: 0;
+        width: min(var(--panel-w), 88vw);
+        z-index: 400;
+        transform: translateX(100%);
+        transition: transform .25s ease;
+        box-shadow: -4px 0 24px rgba(0, 0, 0, .4)
+      }
+
+      body.panel-open .panel-right {
+        transform: translateX(0)
+      }
+
+      .mpr-strip {
+        height: 96px
+      }
+
+      /* .modal a un min-width:420px fixe (voir plus haut), et 26 modales
+     (Patients, Paramètres, éditeur i18n, WebGPU cut...) le surchargent en
+     plus avec un style="min-width:560px..720px" INLINE — 560-720px, plus
+     large que l'écran lui-même sur un téléphone (ex. 390px). L'.modal-overlay
+     qui centre le modal n'a pas overflow:hidden, donc ça débordait sans
+     aucune marge ni scroll. !important nécessaire pour l'emporter sur les
+     styles inline (spécificité plus forte qu'une règle de classe, même dans
+     un @media). Sans effet au-delà de ~740px, où min(680px, 92vw) redonne
+     680px comme le max-width d'origine. */
+      .modal {
+        min-width: 0 !important;
+        width: min(680px, 92vw) !important;
+        max-width: 92vw !important;
+        max-height: 90vh
+      }
+
+      .modal-overlay {
+        padding: 16px
+      }
+
+      /* RTL (arabe) : la sidebar glisse depuis la droite et le panneau depuis
+     la gauche — cohérent avec le reste de l'interface qui s'inverse déjà
+     en dir=rtl (voir plus bas dans ce fichier). Imbriqué dans CE @media :
+     au-dessus du point de rupture, sidebar/panneau restent des colonnes
+     flex normales et ne doivent subir aucune transform. */
+      html[dir="rtl"] .sidebar {
+        left: auto;
+        right: 0;
+        transform: translateX(100%);
+        box-shadow: -4px 0 24px rgba(0, 0, 0, .4)
+      }
+
+      html[dir="rtl"] body.sidebar-open .sidebar {
+        transform: translateX(0)
+      }
+
+      html[dir="rtl"] .panel-right {
+        right: auto;
+        left: 0;
+        transform: translateX(-100%);
+        box-shadow: 4px 0 24px rgba(0, 0, 0, .4)
+      }
+
+      html[dir="rtl"] body.panel-open .panel-right {
+        transform: translateX(0)
       }
     }
 

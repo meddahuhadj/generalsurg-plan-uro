@@ -65,6 +65,8 @@
 
     <!-- Topbar -->
     <div class="topbar">
+      <button class="hamburger-btn" onclick="toggleMobileSidebar()" title="Panneau patient / segments"
+        aria-label="Ouvrir le panneau patient">☰</button>
       <div class="brand">
         <div class="brand-icon">🏥</div>
         <div class="brand-text">
@@ -149,6 +151,8 @@
             <button class="lang-option" onclick="uiSetLocale('nl')" data-lang="nl">🇳🇱 <span>Nederlands</span></button>
           </div>
         </div>
+        <button class="btn-icon panel-toggle-btn" onclick="toggleMobilePanel()" title="Panneau Plan / Staging / IA"
+          aria-label="Ouvrir le panneau latéral">▤</button>
         <div class="status-dot"></div>
       </div>
     </div>
@@ -162,6 +166,11 @@
 
     <!-- Quickbar -->
     <div class="quickbar" id="quickbar"></div>
+
+    <!-- Rideau d'arrière-plan mobile : visible uniquement quand la sidebar ou le
+         panneau droit est ouvert en tiroir (petits écrans, voir toggleMobileSidebar/
+         toggleMobilePanel plus bas et le @media dans assets/styles.css). -->
+    <div class="mobile-backdrop" id="mobile-backdrop" onclick="closeMobileDrawers()"></div>
 
     <!-- Main Content -->
     <div class="main">
@@ -2232,6 +2241,60 @@
         <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/dicom-parser@1.8.21/dist/dicomParser.min.js"></script>
         <script src="assets/app-bootstrap.js"></script>
+
+        <!-- Tiroirs mobiles (sidebar / panneau droit) : sur petit écran (voir le
+             @media dans assets/styles.css), la sidebar et .panel-right passent en
+             position fixe hors-écran par défaut ; ces trois fonctions basculent une
+             classe sur <body> pour les faire glisser à l'écran, avec un rideau
+             d'arrière-plan cliquable pour refermer. N'a aucun effet visuel au-dessus
+             du point de rupture (desktop), où sidebar/panneau restent dans le flux
+             normal comme avant. -->
+        <script>
+          function toggleMobileSidebar() {
+            const opening = !document.body.classList.contains('sidebar-open');
+            document.body.classList.toggle('sidebar-open', opening);
+            if (opening) document.body.classList.remove('panel-open');
+          }
+          function toggleMobilePanel() {
+            const opening = !document.body.classList.contains('panel-open');
+            document.body.classList.toggle('panel-open', opening);
+            if (opening) document.body.classList.remove('sidebar-open');
+          }
+          function closeMobileDrawers() {
+            document.body.classList.remove('sidebar-open', 'panel-open');
+          }
+        </script>
+
+        <!-- Bip élégant au clic sur un bouton : synthétisé via Web Audio API (aucun
+             fichier audio à charger), un seul AudioContext partagé créé au premier
+             clic (les navigateurs bloquent l'audio avant un geste utilisateur).
+             Écouteur global en phase de capture pour couvrir tous les boutons
+             existants et futurs sans instrumenter chacun individuellement. -->
+        <script>
+          let _clickBeepCtx = null;
+          function playClickBeep() {
+            try {
+              if (!_clickBeepCtx) _clickBeepCtx = new (window.AudioContext || window.webkitAudioContext)();
+              if (_clickBeepCtx.state === 'suspended') _clickBeepCtx.resume();
+              const ctx = _clickBeepCtx;
+              const now = ctx.currentTime;
+              const osc = ctx.createOscillator();
+              const gain = ctx.createGain();
+              osc.type = 'sine';
+              osc.frequency.setValueAtTime(880, now);
+              osc.frequency.exponentialRampToValueAtTime(1320, now + 0.05);
+              gain.gain.setValueAtTime(0.0001, now);
+              gain.gain.exponentialRampToValueAtTime(0.12, now + 0.008);
+              gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.09);
+              osc.connect(gain).connect(ctx.destination);
+              osc.start(now);
+              osc.stop(now + 0.1);
+            } catch (e) { /* best-effort : un bip raté ne doit jamais bloquer un clic */ }
+          }
+          document.addEventListener('click', (e) => {
+            if (e.target.closest('button, [role="button"], .btn, .lang-option')) playClickBeep();
+          }, true);
+        </script>
 
         <!-- Enregistrement du service worker (voir sw.js) : après le chargement pour
              ne jamais retarder l'affichage initial. Ignoré silencieusement si servi

@@ -7,6 +7,7 @@ Endpoint exposé :
 """
 
 import uuid
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
@@ -31,7 +32,8 @@ def _flr_threshold(is_cirrhotic: bool, bsa: float) -> float:
 
 @router.get("/patients/{patient_id}/volumetrie", response_model=VolumetrieResponse)
 async def get_volumetrie(patient_id: str, request: Request, margin_cm: float = 1.0, is_cirrhotic: bool = False,
-                          current: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+                         renal_score: Optional[str] = None, dfg_preop: Optional[float] = None,
+                         current: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     p = db.get(models.Patient, patient_id)
     if not p:
         raise HTTPException(404, "Patient introuvable.")
@@ -61,6 +63,30 @@ async def get_volumetrie(patient_id: str, request: Request, margin_cm: float = 1
             "tlv_ml": round(organe_vol, 1), "tv_ml": round(lesion_vol, 1), "flr_pct": remnant_pct,
             "flr_threshold_pct": threshold, "flr_safe": remnant_pct >= threshold,
             "flr_bw_pct": round(remnant_pct * 0.7 / 70, 2), "bsa_m2": round(bsa_val, 2),
+        })
+    elif p.specialty == "urologie":
+        # Néphrométrie RENAL : complexité → orientation néphrectomie partielle vs totale.
+        complexity = None
+        if renal_score:
+            digits = "".join(ch for ch in renal_score if ch.isdigit())
+            score = int(digits) if digits else None
+            if score is not None:
+                complexity = "simple" if score <= 6 else ("intermediaire" if score <= 9 else "complexe")
+        # Volume de parenchyme rénal préservé : en néphrectomie partielle, le résidu fonctionnel
+        # est le rein opéré amputé de la résection ; en tumeur complexe (RENAL ≥ 10) orientée
+        # néphrectomie totale, seul le rein controlatéral (~50% du DFG total) subsiste.
+        if complexity == "complexe":
+            preserved_pct = 0.0
+            dfg_predicted = round(dfg_preop * 0.5, 1) if dfg_preop else None
+        else:
+            preserved_pct = round((organe_vol - resected) / organe_vol * 100, 1)
+            dfg_predicted = round(dfg_preop * preserved_pct / 100, 1) if dfg_preop else None
+        result.update({
+            "renal_score": renal_score,
+            "renal_complexity": complexity,
+            "preserved_parenchyma_pct": preserved_pct,
+            "dfg_preop_ml_min": dfg_preop,
+            "dfg_predicted_ml_min": dfg_predicted,
         })
 
     db.add(models.VolumetrieResult(
