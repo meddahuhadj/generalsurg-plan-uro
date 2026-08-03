@@ -982,3 +982,105 @@ plein peut faire échouer silencieusement bien plus que des tests Python.
   `"hbp"`/`"urologie"` retombe sur le pipeline hépatique par défaut — pas
   idéal, mais pas une régression (c'était déjà le seul comportement
   possible avant cette session, pour toutes les spécialités).
+
+## Backend + Frontend — Les scores de planification branchés sur les vrais volumes segmentés
+
+### Le problème découvert (pas juste construit, un vrai gap trouvé en creusant)
+En cherchant à « brancher la néphrométrie RENAL sur les vrais volumes », deux
+bugs distincts sont apparus :
+1. Les résultats d'un job de segmentation IA réel (volumes en mL, calculés
+   depuis les vrais voxels du CT — voir `_label_volumes_ml`) restaient
+   **coincés dans le job en mémoire** (`_JOBS`) : jamais écrits comme
+   `models.Segment` en base. Résultat : `GET /patients/{id}/volumetrie`
+   (néphrométrie RENAL, FLR/TLV) retombait **systématiquement** sur une
+   constante de population (150 mL pour un rein, quel que soit le patient),
+   même après une segmentation réussie — l'endpoint qui calcule
+   `preserved_parenchyma_pct`/`dfg_predicted_ml_min` n'utilisait jamais de
+   donnée réelle en pratique.
+2. Dans `assets/app-part3.js`, `exportPlan()` (le JSON exporté/envoyé au
+   backend pour le dossier patient) exportait `remnant_pct: 60` **codé en
+   dur**, alors que `computeAnalysis()` juste au-dessus calcule déjà un
+   `remnantPct` réel (basé sur le volume segmenté quand disponible). Le plan
+   affiché à l'écran et le plan exporté divergeaient silencieusement.
+
+### Ce qui a été construit
+- **`segmentation_service._persist_segments_to_db()`** — appelée à la fin de
+  chaque job réussi (pipeline hépatique et urologie) : écrit les volumes
+  réels comme `models.Segment`, marqués `metadata.source="ai_segmentation"`
+  pour ne jamais toucher aux segments saisis manuellement
+  (`POST /patients/{id}/segments`). Une nouvelle segmentation remplace
+  proprement les segments IA précédents (pas d'accumulation de doublons).
+  Ne mappe que ce que `/volumetrie` consomme réellement : `"foie"``/``"organe"``
+  → `Segment.type="organe"`, `"tumeur"` → `"lesion"` ; les 8 sous-segments de
+  Couinaud sont volontairement ignorés (déjà comptés dans le volume hépatique
+  total — les persister aussi aurait doublé `organ_volume_ml`). N'écrit
+  jamais un segment à volume nul (pas de tumeur détectée ≠ tumeur de 0 mL).
+  Ne lève jamais d'exception (même principe que `_maybe_build_mesh`) : un
+  échec de persistance dégrade `/volumetrie` vers l'estimation, sans faire
+  échouer le job de segmentation lui-même.
+- **`routers/volumetrie._pick_urologie_kidney_volume()`** — la néphrométrie
+  RENAL porte sur **un seul rein** (celui opéré), pas sur la somme reins +
+  vessie + surrénales que donnerait un simple filtre `type=="organe"`. Prend
+  un paramètre `kidney_side` (`left`/`right`, nouveau sur
+  `GET /patients/{id}/volumetrie`) : si précisé et segmenté, utilise ce
+  volume réel. Si un seul rein est segmenté (rein controlatéral non détecté),
+  l'utilise directement sans ambiguïté. **Si les deux reins sont segmentés et
+  qu'aucun côté n'est précisé, ne devine JAMAIS** — retombe explicitement sur
+  l'estimation de population historique plutôt qu'un choix clinique
+  silencieux qui fausserait le DFG post-opératoire prédit. La réponse expose
+  désormais `organ_volume_source` (`real_segmentation_kidney_left/right` ou
+  `population_estimate`) pour que l'appelant sache honnêtement d'où vient le
+  chiffre.
+- **Frontend (`assets/app-part2.js`)** — nouveau sélecteur « Rein opéré
+  (côté) » dans le panneau de staging urologie. `updateStagingDecision()`
+  appelle désormais aussi `fetchRealRenalNephrometry()` (asynchrone, ne
+  bloque jamais le rendu synchrone des critères TNM/RENAL/Bosniak existants)
+  qui interroge le VRAI endpoint backend et affiche `preserved_parenchyma_pct`
+  / `dfg_predicted_ml_min` avec un badge distinguant volume réel vs
+  estimation — jamais mélangés silencieusement, même principe que le badge
+  déjà utilisé pour la volumétrie générique.
+- **`exportPlan()` corrigé** : réutilise directement `computeAnalysis()` (le
+  même calcul que l'onglet Analyse affiché à l'écran) au lieu de recalculer
+  ou deviner — `remnant_pct` et `resection_volume_ml` exportés correspondent
+  maintenant toujours à ce que le chirurgien a vu.
+- Traductions ajoutées dans les 4 langues (fr/en/ar/nl) pour les nouvelles
+  clés (`staging.kidneySideField`, `staging.renalReal*`) — parité de clés
+  vérifiée par script entre les 4 fichiers `i18n/*.json`.
+
+### Testé réellement
+- **`backend/tests/test_segmentation_db_persistence.py`** (7 tests) — contre
+  une vraie base SQLite isolée (pas un mock du DB engine) : création des
+  segments organe/lesion, exclusion des sous-segments de Couinaud et des
+  volumes nuls, remplacement propre au ré-run sans toucher aux segments
+  manuels, no-op silencieux si le patient a été supprimé pendant le job,
+  jamais d'exception si la DB est indisponible.
+- **`backend/tests/test_volumetrie_urologie.py`** (+6 tests) — sélection du
+  bon rein selon `kidney_side`, repli sur l'estimation quand le côté demandé
+  n'est pas segmenté, cas à un seul rein segmenté, non-ambiguïté jamais
+  devinée quand les deux reins sont présents, non-confusion avec
+  vessie/surrénales/lésions.
+- Suite complète pertinente (`test_volumetrie_urologie.py`,
+  `test_segmentation_db_persistence.py`, `test_segmentation_urologie.py`) :
+  24 passed.
+- `node -c` sur les fichiers JS modifiés + validation JSON des 4 fichiers de
+  langue + script de vérification de parité des clés `staging.*` entre les
+  4 langues.
+
+### Limites honnêtes
+- Le panneau de staging (règles RENAL/Bosniak/D'Amico en JS local) reste une
+  interface de saisie manuelle indépendante — `fetchRealRenalNephrometry()`
+  l'ENRICHIT avec un second bloc de calcul réel, il ne le remplace pas.
+  Fusionner complètement les deux systèmes de règles est un chantier plus
+  large, pas fait ici.
+- Non testé dans un vrai navigateur (pas de navigateur dans ce sandbox, même
+  limite documentée partout ailleurs dans ce fichier) : le câblage
+  frontend↔backend (sélecteur de côté, appel fetch, rendu du badge) est
+  cohérent avec les conventions déjà en place dans le code (`getBackendToken`,
+  `state.settings.apiBase`, badges réel/estimation) et vérifié par lecture +
+  `node -c`, pas par clic réel dans l'UI.
+- `_pick_urologie_kidney_volume` refuse de deviner quand les deux reins sont
+  segmentés sans `kidney_side` précisé — c'est un choix délibéré (validé avec
+  l'utilisateur) plutôt qu'une limite technique : un futur besoin de
+  détection automatique du côté atteint nécessiterait une détection de
+  lésion (non disponible, voir plus haut), pas juste une heuristique sur les
+  volumes.

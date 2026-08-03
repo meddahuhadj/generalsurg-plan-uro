@@ -403,13 +403,19 @@
 
           async function exportPlan() {
             const mod = MODULES[state.mod];
-            const realVol = getRealSegmentationVolumeMl();
-            const organVol = realVol != null ? realVol : computeOrganVolumeMl();
-            const volumeSource = realVol != null ? 'real_segmentation_totalsegmentator' : 'procedural_estimate_not_clinical';
+            // Réutilise EXACTEMENT le calcul de l'onglet Analyse (computeAnalysis) au lieu de
+            // recalculer/deviner ici : le plan exporté doit toujours correspondre à ce que le
+            // chirurgien a vu à l'écran. Auparavant remnant_pct était codé en dur à 60, sans
+            // rapport avec le volume réel (segmenté ou procédural) ni la résection calculée.
+            const a = computeAnalysis();
+            const volumeSource = a.dataSource === 'real_segmentation' ? 'real_segmentation_totalsegmentator' : 'procedural_estimate_not_clinical';
             const payload = {
               patient: { id: mod.patient.id, nom: mod.patient.nom },
               specialty: state.mod,
-              volumetrie: { organ_volume_ml: Math.round(organVol), remnant_pct: 60, volume_source: volumeSource },
+              volumetrie: {
+                organ_volume_ml: Math.round(a.organVol), resection_volume_ml: Math.round(a.resectedVol),
+                remnant_pct: a.remnantPct, volume_source: volumeSource,
+              },
               notes: 'Export généré depuis GeneralSurg Plan MIMO'
                 + (volumeSource === 'procedural_estimate_not_clinical'
                   ? ' — ⚠ volume_organe = estimation procédurale, PAS une mesure de segmentation clinique validée.'

@@ -9,9 +9,65 @@ métier directement, sans dépendre du reste de la stack FastAPI).
 
 Lancer : cd backend && pytest tests/test_volumetrie_urologie.py -v
 """
+from types import SimpleNamespace
+
 import pytest
 
-from routers.volumetrie import _renal_nephrometry
+from routers.volumetrie import _pick_urologie_kidney_volume, _renal_nephrometry
+
+
+def _seg(organ, volume_ml, type_="organe"):
+    """Simule un models.Segment (ORM) avec un simple objet — _pick_urologie_kidney_volume
+    n'accède qu'à .type/.volume_ml/.metadata_json, donc pas besoin d'une vraie DB ici."""
+    return SimpleNamespace(type=type_, volume_ml=volume_ml, metadata_json={"organ": organ})
+
+
+def test_pick_kidney_volume_uses_the_specified_side():
+    segs = [_seg("kidney_left", 140.0), _seg("kidney_right", 155.0)]
+    vol, source = _pick_urologie_kidney_volume(segs, "left")
+    assert vol == 140.0
+    assert source == "real_segmentation_kidney_left"
+
+
+def test_pick_kidney_volume_side_specified_but_not_segmented_falls_back_to_population():
+    segs = [_seg("kidney_right", 155.0)]  # rein gauche jamais segmenté (structure absente)
+    vol, source = _pick_urologie_kidney_volume(segs, "left")
+    assert vol == 0.0
+    assert source == "population_estimate"
+
+
+def test_pick_kidney_volume_single_kidney_present_no_side_needed():
+    """Un seul rein segmenté (ex: rein controlatéral non détecté par le modèle) :
+    pas d'ambiguïté de côté, utilisable directement sans que l'utilisateur précise."""
+    segs = [_seg("kidney_right", 155.0)]
+    vol, source = _pick_urologie_kidney_volume(segs, None)
+    assert vol == 155.0
+    assert source == "real_segmentation_kidney_right"
+
+
+def test_pick_kidney_volume_never_guesses_when_both_kidneys_ambiguous():
+    """Décision clinique explicite requise : quand les deux reins sont segmentés
+    et qu'aucun côté n'est précisé, ne JAMAIS deviner lequel est opéré — retomber
+    sur l'estimation de population (comportement historique) plutôt qu'un choix
+    silencieux qui fausserait le DFG prédit post-opératoire."""
+    segs = [_seg("kidney_left", 140.0), _seg("kidney_right", 155.0)]
+    vol, source = _pick_urologie_kidney_volume(segs, None)
+    assert vol == 0.0
+    assert source == "population_estimate"
+
+
+def test_pick_kidney_volume_ignores_other_organe_segments():
+    """La vessie et les surrénales sont aussi type=="organe" en urologie — ne
+    doivent jamais être confondues avec un volume rénal."""
+    segs = [_seg("urinary_bladder", 300.0), _seg("adrenal_gland_left", 8.0), _seg("kidney_left", 140.0)]
+    vol, source = _pick_urologie_kidney_volume(segs, "left")
+    assert vol == 140.0
+
+
+def test_pick_kidney_volume_ignores_lesion_type_segments():
+    segs = [_seg("kidney_left_tumor", 20.0, type_="lesion"), _seg("kidney_left", 140.0)]
+    vol, source = _pick_urologie_kidney_volume(segs, "left")
+    assert vol == 140.0
 
 
 def test_simple_tumor_score_le_6():

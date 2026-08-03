@@ -133,6 +133,10 @@
     "gleasonField": "Gleason / ISUP",
     "dfgField": "Preoperatieve eGFR (ml/min/1,73m²)",
     "bosniakField": "Bosniak-classificatie (cyste)",
+    "kidneySideField": "Geopereerde nier (zijde)",
+    "kidneySideUnspecified": "Niet gespecificeerd",
+    "kidneySideLeft": "Links",
+    "kidneySideRight": "Rechts",
     "psaField": "Totaal PSA (ng/mL)",
     "pStageField": "Klinisch stadium prostaat (cT)",
     "volumetryTitle": "📊 Volumetrie",
@@ -148,7 +152,15 @@
     "resectable": "✅ Resectabel — Operatie geïndiceerd",
     "notResectable": "❌ Momenteel niet resectabel — Alternatief bespreken",
     "exportReport": "⭳ Stadiëringsoverzicht exporteren",
-    "reportExported": "Stadiëringsrapport geëxporteerd (JSON)"
+    "reportExported": "Stadiëringsrapport geëxporteerd (JSON)",
+    "renalRealTitle": "🧮 Berekende nefrometrie (backend)",
+    "renalRealPreserved": "Geschat behouden parenchym",
+    "renalRealDfgPredicted": "Voorspelde postoperatieve eGFR",
+    "renalRealBadgeReal": "🏥 echt niervolume",
+    "renalRealBadgeEstimate": "⚠ populatieschatting",
+    "renalRealUnavailable": "Backend niet geconfigureerd — berekening niet beschikbaar",
+    "renalRealError": "Backendberekening mislukt",
+    "renalRealLoading": "Berekenen…"
   },
   "dicom": {
     "importing": "{count} bestand(en) lezen…",

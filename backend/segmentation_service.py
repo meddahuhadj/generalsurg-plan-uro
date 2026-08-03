@@ -68,6 +68,8 @@ import numpy as np
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
+import models
+from db import SessionLocal
 from logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -205,6 +207,61 @@ def _maybe_build_lowpoly_twin_mesh(job_id: str, target_faces: int = 1500) -> Opt
 
 
 # ------------------------------------------------------------------
+# Persistance des volumes réels en base (Segment) — sans ça, les résultats de
+# l'IA restent coincés dans le job en mémoire et /patients/{id}/volumetrie
+# (néphrométrie RENAL, FLR/TLV) retombe TOUJOURS sur une constante de
+# population, même après une vraie segmentation réussie.
+# ------------------------------------------------------------------
+# result["segments"] mélange des types "métier" différents selon le pipeline
+# (voir _run_segmentation_job / _run_urologie_segmentation_job) : "organe"
+# (urologie), "foie"/"tumeur" (hépatique), "segment" (sous-division de
+# Couinaud). Seuls les organes entiers et les lésions doivent alimenter
+# Segment.type ("organe"/"lesion", consommés par routers/volumetrie.py) — les
+# 8 segments de Couinaud sont des PARTIES du foie déjà comptées dans "foie" ;
+# les additionner en plus gonflerait organ_volume_ml en double.
+_SEGMENT_TYPE_TO_DB_TYPE = {"organe": "organe", "foie": "organe", "tumeur": "lesion"}
+
+
+def _persist_segments_to_db(patient_id: str, job_id: str, result_segments: List[dict]) -> None:
+    """Enregistre les volumes réels d'un job terminé comme des `models.Segment`.
+
+    Ne lève JAMAIS d'exception (même principe défensif que `_maybe_build_mesh`) :
+    un échec de persistance ne doit pas faire échouer le job de segmentation
+    lui-même, juste laisser /volumetrie retomber sur son ancienne estimation.
+    Remplace uniquement les segments d'une PRÉCÉDENTE segmentation IA pour ce
+    patient (marqués metadata.source="ai_segmentation") — ne touche jamais aux
+    segments saisis manuellement via POST /patients/{id}/segments.
+    """
+    try:
+        db = SessionLocal()
+        try:
+            if not db.get(models.Patient, patient_id):
+                logger.warning("Persistance segments IA ignorée: patient %s introuvable.", patient_id)
+                return
+            for s in db.query(models.Segment).filter(models.Segment.patient_id == patient_id).all():
+                if (s.metadata_json or {}).get("source") == "ai_segmentation":
+                    db.delete(s)
+            for entry in result_segments:
+                db_type = _SEGMENT_TYPE_TO_DB_TYPE.get(entry.get("type"))
+                vol_ml = entry.get("volume_ml") or 0.0
+                if db_type is None or vol_ml <= 0:
+                    continue
+                organ = entry.get("organ") or entry.get("segment_id") or entry.get("label") or "?"
+                db.add(models.Segment(
+                    id=f"ai_{job_id}_{organ}",
+                    patient_id=patient_id, type=db_type, volume_ml=vol_ml,
+                    label=entry.get("label") or organ, mesh_ref=entry.get("mesh_url"),
+                    metadata_json={"source": "ai_segmentation", "job_id": job_id, "organ": organ},
+                ))
+            db.commit()
+        finally:
+            db.close()
+    except Exception as e:  # noqa: BLE001
+        logger.error("Échec de persistance des segments IA en base (patient=%s, job=%s): %s",
+                     patient_id, job_id, e)
+
+
+# ------------------------------------------------------------------
 # Segmentation urologique réelle : reins, vessie, surrénales — via la tâche
 # GÉNÉRIQUE "total" de TotalSegmentator (roi_subset), pas un modèle dédié
 # comme liver_segments/liver_vessels pour le foie (aucun n'existe pour le
@@ -304,6 +361,7 @@ def _run_segmentation_job(job_id: str, nifti_input: Path, patient_id: str, speci
 
         if specialty == "urologie":
             result = _run_urologie_segmentation_job(job_id, nifti_input, patient_id, job, t0)
+            _persist_segments_to_db(patient_id, job_id, result.get("segments", []))
             job["status"] = "done"
             job["progress"] = "Terminé."
             job["result"] = result
@@ -411,6 +469,7 @@ def _run_segmentation_job(job_id: str, nifti_input: Path, patient_id: str, speci
             ),
         }
 
+        _persist_segments_to_db(patient_id, job_id, segments_payload)
         job["status"] = "done"
         job["progress"] = "Terminé."
         job["result"] = result

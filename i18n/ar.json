@@ -133,6 +133,10 @@
     "gleasonField": "Gleason / ISUP",
     "dfgField": "معدل الترشيح الكبيبي قبل الجراحة (مل/دقيقة/1.73م²)",
     "bosniakField": "تصنيف Bosniak (الكيسة الكلوية)",
+    "kidneySideField": "الكلية المُجراة (الجانب)",
+    "kidneySideUnspecified": "غير محدد",
+    "kidneySideLeft": "يسار",
+    "kidneySideRight": "يمين",
     "psaField": "PSA الكلي (نانوغرام/مل)",
     "pStageField": "المرحلة السريرية للبروستاتا (cT)",
     "volumetryTitle": "📊 قياس الحجم",
@@ -148,7 +152,15 @@
     "resectable": "✅ قابل للاستئصال — الجراحة مُوصى بها",
     "notResectable": "❌ غير قابل للاستئصال حاليًا — يجب مناقشة بديل",
     "exportReport": "⭳ تصدير ملخص التصنيف",
-    "reportExported": "تم تصدير تقرير التصنيف (JSON)"
+    "reportExported": "تم تصدير تقرير التصنيف (JSON)",
+    "renalRealTitle": "🧮 قياس نفرومتري محسوب (الخادم)",
+    "renalRealPreserved": "النسيج الكلوي المحفوظ المقدر",
+    "renalRealDfgPredicted": "معدل الترشيح الكبيبي المتوقع بعد الجراحة",
+    "renalRealBadgeReal": "🏥 حجم كلوي حقيقي",
+    "renalRealBadgeEstimate": "⚠ تقدير سكاني",
+    "renalRealUnavailable": "الخادم غير مُهيأ — الحساب غير متاح",
+    "renalRealError": "فشل الحساب من الخادم",
+    "renalRealLoading": "جارٍ الحساب…"
   },
   "dicom": {
     "importing": "جارٍ قراءة {count} ملف(ات)…",

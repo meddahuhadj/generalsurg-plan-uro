@@ -133,6 +133,10 @@
     "gleasonField": "Gleason / ISUP",
     "dfgField": "DFG préop. (ml/min/1,73m²)",
     "bosniakField": "Classification de Bosniak (kyste)",
+    "kidneySideField": "Rein opéré (côté)",
+    "kidneySideUnspecified": "Non précisé",
+    "kidneySideLeft": "Gauche",
+    "kidneySideRight": "Droit",
     "psaField": "PSA total (ng/mL)",
     "pStageField": "Stade clinique prostate (cT)",
     "volumetryTitle": "📊 Volumétrie",
@@ -148,7 +152,15 @@
     "resectable": "✅ Résécable — Chirurgie indiquée",
     "notResectable": "❌ Non résécable en l'état — Discuter alternative",
     "exportReport": "⭳ Exporter bilan staging",
-    "reportExported": "Bilan staging exporté (JSON)"
+    "reportExported": "Bilan staging exporté (JSON)",
+    "renalRealTitle": "🧮 Néphrométrie calculée (backend)",
+    "renalRealPreserved": "Parenchyme préservé estimé",
+    "renalRealDfgPredicted": "DFG post-op. prédit",
+    "renalRealBadgeReal": "🏥 volume rénal réel",
+    "renalRealBadgeEstimate": "⚠ estimation de population",
+    "renalRealUnavailable": "Backend non configuré — calcul indisponible",
+    "renalRealError": "Échec du calcul backend",
+    "renalRealLoading": "Calcul en cours…"
   },
   "dicom": {
     "importing": "Lecture de {count} fichier(s)…",

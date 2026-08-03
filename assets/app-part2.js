@@ -601,6 +601,7 @@
               crm: isColorectal ? 'Négatif (>1mm)' : null,
               vems: isThoracique ? '82%' : null,
               renal: isUrologie ? '8x' : null,
+              kidneySide: null,
               pirads: isUrologie ? '4' : null,
               gleason: isUrologie ? '3+4 (ISUP 2)' : null,
               dfg: isUrologie ? '68' : null,
@@ -673,6 +674,14 @@
         <label>${I18N.t('staging.renalField')}</label>
         <select id="stg-renal" onchange="updateStagingDecision()">
           ${['4a','4x','5a','5x','6a','6x','7a','7x','8a','8x','9a','9x','10a','10x','11a','11x','12a','12x'].map(v => `<option ${stagingData.renal === v ? 'selected' : ''}>${v}</option>`).join('')}
+        </select>
+      </div>
+      <div class="staging-field">
+        <label>${I18N.t('staging.kidneySideField')}</label>
+        <select id="stg-kidney-side" onchange="updateStagingDecision()">
+          <option value="">${I18N.t('staging.kidneySideUnspecified')}</option>
+          <option value="left" ${stagingData.kidneySide === 'left' ? 'selected' : ''}>${I18N.t('staging.kidneySideLeft')}</option>
+          <option value="right" ${stagingData.kidneySide === 'right' ? 'selected' : ''}>${I18N.t('staging.kidneySideRight')}</option>
         </select>
       </div>
       <div class="staging-field">
@@ -751,6 +760,7 @@
             const crm = document.getElementById('stg-crm')?.value;
             const vemsStr = document.getElementById('stg-vems')?.value;
             const renal = document.getElementById('stg-renal')?.value;
+            const kidneySide = document.getElementById('stg-kidney-side')?.value || null;
             const pirads = document.getElementById('stg-pirads')?.value;
             const gleason = document.getElementById('stg-gleason')?.value;
             const dfgStr = document.getElementById('stg-dfg')?.value;
@@ -766,6 +776,7 @@
               if (crm) state.mpr._stagingData.crm = crm;
               if (vemsStr) state.mpr._stagingData.vems = vemsStr;
               if (renal) state.mpr._stagingData.renal = renal;
+              state.mpr._stagingData.kidneySide = kidneySide;
               if (pirads) state.mpr._stagingData.pirads = pirads;
               if (gleason) state.mpr._stagingData.gleason = gleason;
               if (dfgStr) state.mpr._stagingData.dfg = dfgStr;
@@ -947,10 +958,59 @@
           ${c.ok === true ? '✅' : c.ok === 'warn' ? '⚠️' : '❌'} ${c.text}
         </div>`).join('')}
     </div>
+    ${state.mod === 'urologie' ? `<div id="staging-renal-real" style="margin-top:6px"></div>` : ''}
     <button class="btn btn-secondary" style="width:100%;margin-top:8px;font-size:10px" onclick="exportStagingReport()">${I18N.t('staging.exportReport')}</button>
   `;
 
             logAudit('staging_update', { T, N, M, verdict: resectable ? 'resectable' : 'not_resectable' });
+
+            // Enrichit le panneau (rein réel, quand disponible) — asynchrone, ne bloque jamais le
+            // rendu synchrone des critères ci-dessus (voir fetchRealRenalNephrometry).
+            if (state.mod === 'urologie') fetchRealRenalNephrometry(renal, dfgStr, kidneySide);
+          }
+
+          // Contrairement au bloc RENAL/Bosniak/D'Amico ci-dessus (règles écrites en JS, purement
+          // locales), cette fonction appelle le VRAI calcul backend (GET /patients/{id}/volumetrie,
+          // voir routers/volumetrie.py) qui, quand une segmentation IA réelle a été enregistrée pour
+          // ce patient (segmentation_service._persist_segments_to_db), utilise le volume rénal RÉEL
+          // du patient au lieu d'une constante de population (150 mL) pour prédire le parenchyme
+          // préservé et le DFG post-opératoire — jamais mélangés silencieusement avec l'estimation
+          // (organ_volume_source distingue les deux, voir le badge affiché ci-dessous).
+          async function fetchRealRenalNephrometry(renalScore, dfgStr, kidneySide) {
+            const box = document.getElementById('staging-renal-real');
+            if (!box) return;
+            if (!state.settings.apiBase) {
+              box.innerHTML = `<div style="font-size:9px;color:var(--text3)">${I18N.t('staging.renalRealUnavailable')}</div>`;
+              return;
+            }
+            const mod = MODULES[state.mod];
+            box.innerHTML = `<div style="font-size:9px;color:var(--text3)">${I18N.t('staging.renalRealLoading')}</div>`;
+            try {
+              const token = await getBackendToken();
+              const base = state.settings.apiBase.replace(/\/+$/, '');
+              const params = new URLSearchParams();
+              if (renalScore) params.set('renal_score', renalScore);
+              const dfg = parseFloat(dfgStr);
+              if (!isNaN(dfg)) params.set('dfg_preop', dfg);
+              if (kidneySide) params.set('kidney_side', kidneySide);
+              const r = await fetch(`${base}/patients/${mod.patient.id}/volumetrie?${params}`, {
+                headers: { 'Authorization': 'Bearer ' + token },
+              });
+              if (!r.ok) throw new Error('HTTP ' + r.status);
+              const d = await r.json();
+              const isReal = (d.organ_volume_source || '').startsWith('real_segmentation');
+              const badge = isReal
+                ? `<span style="font-size:9px;font-weight:700;color:#22c55e;background:#22c55e22;padding:1px 6px;border-radius:8px;margin-left:4px">${I18N.t('staging.renalRealBadgeReal')}</span>`
+                : `<span style="font-size:9px;font-weight:700;color:#eab308;background:#eab30822;padding:1px 6px;border-radius:8px;margin-left:4px">${I18N.t('staging.renalRealBadgeEstimate')}</span>`;
+              box.innerHTML = `
+    <div class="staging-section-title" style="margin-top:0">${I18N.t('staging.renalRealTitle')} ${badge}</div>
+    <div style="font-size:9px;color:var(--text2);line-height:1.6">
+      <div>• ${I18N.t('staging.renalRealPreserved')} : <strong>${d.preserved_parenchyma_pct != null ? d.preserved_parenchyma_pct + '%' : '—'}</strong></div>
+      <div>• ${I18N.t('staging.renalRealDfgPredicted')} : <strong>${d.dfg_predicted_ml_min != null ? d.dfg_predicted_ml_min + ' ml/min' : '—'}</strong></div>
+    </div>`;
+            } catch (e) {
+              box.innerHTML = `<div style="font-size:9px;color:var(--text3)">${I18N.t('staging.renalRealError')}: ${e.message}</div>`;
+            }
           }
 
           function exportStagingReport() {

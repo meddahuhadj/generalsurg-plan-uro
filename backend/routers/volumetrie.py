@@ -7,7 +7,7 @@ Endpoint exposé :
 """
 
 import uuid
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
@@ -28,6 +28,39 @@ def _flr_threshold(is_cirrhotic: bool, bsa: float) -> float:
     if is_cirrhotic:
         return max(35.0, 30.0 + 12.0 * (1.0 - bsa / 1.9))
     return max(25.0, 20.0 + 10.0 * (1.0 - bsa / 1.9))
+
+
+def _pick_urologie_kidney_volume(segments: list, kidney_side: Optional[str]) -> tuple:
+    """Sélectionne le volume rénal RÉEL (issu de la segmentation IA, voir
+    segmentation_service._persist_segments_to_db) pertinent pour la néphrométrie
+    RENAL, qui porte sur UN SEUL rein (celui opéré) — jamais la somme des deux
+    reins + vessie + surrénales que donnerait un simple filtre type=="organe".
+
+    Fonction pure (accepte tout objet/dict avec .type / .volume_ml / .metadata_json,
+    pas seulement l'ORM SQLAlchemy) pour rester testable sans DB, même principe que
+    `_renal_nephrometry` ci-dessous.
+
+    Ne devine JAMAIS quel rein est opéré quand le côté n'est pas précisé ET que les
+    deux reins sont segmentés : mieux vaut retomber explicitement sur l'estimation
+    de population (volume=0.0, voir get_volumetrie) qu'un choix clinique silencieux
+    qui pourrait fausser le DFG prédit post-opératoire.
+
+    Retourne (volume_ml, source) où source décrit l'origine pour l'API/l'audit.
+    """
+    kidney_by_organ: dict = {}
+    for s in segments:
+        meta = getattr(s, "metadata_json", None) or {}
+        organ = meta.get("organ")
+        if getattr(s, "type", None) == "organe" and organ in ("kidney_left", "kidney_right"):
+            kidney_by_organ[organ] = s.volume_ml
+    if kidney_side:
+        vol = kidney_by_organ.get(f"kidney_{kidney_side}")
+        if vol:
+            return vol, f"real_segmentation_kidney_{kidney_side}"
+    elif len(kidney_by_organ) == 1:
+        (organ, vol), = kidney_by_organ.items()
+        return vol, f"real_segmentation_{organ}"
+    return 0.0, "population_estimate"
 
 
 def _renal_nephrometry(renal_score: Optional[str], dfg_preop: Optional[float],
@@ -68,13 +101,22 @@ def _renal_nephrometry(renal_score: Optional[str], dfg_preop: Optional[float],
 @router.get("/patients/{patient_id}/volumetrie", response_model=VolumetrieResponse)
 async def get_volumetrie(patient_id: str, request: Request, margin_cm: float = 1.0, is_cirrhotic: bool = False,
                          renal_score: Optional[str] = None, dfg_preop: Optional[float] = None,
+                         kidney_side: Optional[Literal["left", "right"]] = None,
                          current: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     p = db.get(models.Patient, patient_id)
     if not p:
         raise HTTPException(404, "Patient introuvable.")
     segments = db.query(models.Segment).filter(models.Segment.patient_id == patient_id).all()
-    organe_vol = sum(s.volume_ml for s in segments if s.type == "organe")
     lesion_vol = sum(s.volume_ml for s in segments if s.type == "lesion")
+
+    # En urologie, "organe" désigne à la fois les 2 reins, la vessie et les 2
+    # surrénales dans la base — un simple sum() mélangerait ces organes distincts.
+    # La néphrométrie RENAL porte sur UN rein : voir _pick_urologie_kidney_volume.
+    if p.specialty == "urologie":
+        organe_vol, organ_volume_source = _pick_urologie_kidney_volume(segments, kidney_side)
+    else:
+        organe_vol = sum(s.volume_ml for s in segments if s.type == "organe")
+        organ_volume_source = "real_segmentation" if organe_vol > 0 else "population_estimate"
 
     if organe_vol == 0:
         organe_vol = {"hbp": 1450.0, "colorectal": 350.0, "gastrique": 1100.0, "thyroide": 20.0,
@@ -90,6 +132,7 @@ async def get_volumetrie(patient_id: str, request: Request, margin_cm: float = 1
         "organ_volume_ml": round(organe_vol, 1), "lesion_volume_ml": round(lesion_vol, 1),
         "ratio_lesion_organe_pct": round(lesion_vol / organe_vol * 100, 1),
         "volume_resection_ml": round(resected), "remnant_pct": remnant_pct, "margin_cm": margin_cm,
+        "organ_volume_source": organ_volume_source,
     }
     if p.specialty == "hbp":
         bsa_val = _bsa(p.poids_kg, p.taille_cm)

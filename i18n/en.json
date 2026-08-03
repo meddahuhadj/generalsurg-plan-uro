@@ -133,6 +133,10 @@
     "gleasonField": "Gleason / ISUP",
     "dfgField": "Preop. eGFR (ml/min/1.73m²)",
     "bosniakField": "Bosniak classification (cyst)",
+    "kidneySideField": "Operated kidney (side)",
+    "kidneySideUnspecified": "Unspecified",
+    "kidneySideLeft": "Left",
+    "kidneySideRight": "Right",
     "psaField": "Total PSA (ng/mL)",
     "pStageField": "Prostate clinical stage (cT)",
     "volumetryTitle": "📊 Volumetry",
@@ -148,7 +152,15 @@
     "resectable": "✅ Resectable — Surgery indicated",
     "notResectable": "❌ Not resectable as is — Discuss alternative",
     "exportReport": "⭳ Export staging summary",
-    "reportExported": "Staging report exported (JSON)"
+    "reportExported": "Staging report exported (JSON)",
+    "renalRealTitle": "🧮 Computed nephrometry (backend)",
+    "renalRealPreserved": "Estimated preserved parenchyma",
+    "renalRealDfgPredicted": "Predicted post-op. eGFR",
+    "renalRealBadgeReal": "🏥 real kidney volume",
+    "renalRealBadgeEstimate": "⚠ population estimate",
+    "renalRealUnavailable": "Backend not configured — computation unavailable",
+    "renalRealError": "Backend computation failed",
+    "renalRealLoading": "Computing…"
   },
   "dicom": {
     "importing": "Importing {count} file(s)…",
