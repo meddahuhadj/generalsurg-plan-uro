@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from routers.volumetrie import _pick_urologie_kidney_volume, _renal_nephrometry
+from routers.volumetrie import _pick_urologie_kidney_volume, _renal_nephrometry, _resolve_lesion_volume
 
 
 def _seg(organ, volume_ml, type_="organe"):
@@ -68,6 +68,52 @@ def test_pick_kidney_volume_ignores_lesion_type_segments():
     segs = [_seg("kidney_left_tumor", 20.0, type_="lesion"), _seg("kidney_left", 140.0)]
     vol, source = _pick_urologie_kidney_volume(segs, "left")
     assert vol == 140.0
+
+
+def _seg_with_source(organ, volume_ml, type_="lesion", ai=True):
+    meta = {"organ": organ}
+    if ai:
+        meta["source"] = "ai_segmentation"
+    return SimpleNamespace(type=type_, volume_ml=volume_ml, metadata_json=meta)
+
+
+def test_resolve_lesion_volume_real_zero_is_not_overwritten_by_population_constant():
+    """Le vrai bug corrigé dans cette session : une segmentation IA a tourné (reins
+    persistés) et n'a trouvé AUCUN kyste — lesion_vol=0.0 est un résultat clinique réel,
+    pas une absence de donnée. Ne doit JAMAIS être remplacé par la constante 20.0 mL."""
+    segs = [_seg_with_source("kidney_left", 140.0, type_="organe", ai=True)]  # pas de kyste
+    vol, source = _resolve_lesion_volume(segs)
+    assert vol == 0.0
+    assert source == "real_segmentation"
+
+
+def test_resolve_lesion_volume_no_ai_segmentation_falls_back_to_population_constant():
+    """Aucune segmentation IA n'a jamais tourné pour ce patient : lesion_vol=0.0 signifie
+    ici "pas de donnée", pas "pas de lésion" — le comportement historique (estimation de
+    20.0 mL) doit être préservé."""
+    vol, source = _resolve_lesion_volume([])
+    assert vol == 20.0
+    assert source == "population_estimate"
+
+
+def test_resolve_lesion_volume_real_kidney_cyst_detected():
+    segs = [
+        _seg_with_source("kidney_left", 140.0, type_="organe", ai=True),
+        _seg_with_source("kidney_cyst_left", 4.5, type_="lesion", ai=True),
+    ]
+    vol, source = _resolve_lesion_volume(segs)
+    assert vol == pytest.approx(4.5)
+    assert source == "real_segmentation"
+
+
+def test_resolve_lesion_volume_manual_segment_without_ai_flag_still_uses_population_fallback_if_zero():
+    """Un segment saisi manuellement (pas de metadata.source="ai_segmentation") ne compte
+    pas comme preuve qu'une segmentation IA a tourné — cohérent avec _persist_segments_to_db
+    qui ne marque QUE les segments IA de cette façon."""
+    segs = [SimpleNamespace(type="organe", volume_ml=99.0, metadata_json={})]  # saisie manuelle
+    vol, source = _resolve_lesion_volume(segs)
+    assert vol == 20.0
+    assert source == "population_estimate"
 
 
 def test_simple_tumor_score_le_6():

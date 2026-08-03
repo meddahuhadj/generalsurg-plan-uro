@@ -1007,6 +1007,7 @@
     <div style="font-size:9px;color:var(--text2);line-height:1.6">
       <div>• ${I18N.t('staging.renalRealPreserved')} : <strong>${d.preserved_parenchyma_pct != null ? d.preserved_parenchyma_pct + '%' : '—'}</strong></div>
       <div>• ${I18N.t('staging.renalRealDfgPredicted')} : <strong>${d.dfg_predicted_ml_min != null ? d.dfg_predicted_ml_min + ' ml/min' : '—'}</strong></div>
+      <div>• ${I18N.t('staging.renalRealCystVolume')} : <strong>${d.lesion_volume_ml != null ? d.lesion_volume_ml + ' mL' : '—'}</strong>${d.lesion_volume_source === 'real_segmentation' ? '' : ` <em>(${I18N.t('staging.volumetryEstimateBadge')})</em>`}</div>
     </div>`;
             } catch (e) {
               box.innerHTML = `<div style="font-size:9px;color:var(--text3)">${I18N.t('staging.renalRealError')}: ${e.message}</div>`;

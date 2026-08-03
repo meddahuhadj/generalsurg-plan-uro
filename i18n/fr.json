@@ -156,6 +156,7 @@
     "renalRealTitle": "🧮 Néphrométrie calculée (backend)",
     "renalRealPreserved": "Parenchyme préservé estimé",
     "renalRealDfgPredicted": "DFG post-op. prédit",
+    "renalRealCystVolume": "Volume de kyste rénal détecté",
     "renalRealBadgeReal": "🏥 volume rénal réel",
     "renalRealBadgeEstimate": "⚠ estimation de population",
     "renalRealUnavailable": "Backend non configuré — calcul indisponible",

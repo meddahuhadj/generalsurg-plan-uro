@@ -202,6 +202,7 @@ class VolumetrieResponse(BaseModel):
     remnant_pct: float
     margin_cm: float
     organ_volume_source: Optional[str] = None
+    lesion_volume_source: Optional[str] = None
     # HBP-specific
     tlv_ml: Optional[float] = None
     tv_ml: Optional[float] = None

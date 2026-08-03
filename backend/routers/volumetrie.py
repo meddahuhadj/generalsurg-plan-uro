@@ -63,6 +63,26 @@ def _pick_urologie_kidney_volume(segments: list, kidney_side: Optional[str]) -> 
     return 0.0, "population_estimate"
 
 
+def _resolve_lesion_volume(segments: list) -> tuple:
+    """Volume de lésion (tumeur hépatique, kyste rénal...) : additionne les segments
+    type=="lesion" existants, MAIS ne retombe sur la constante historique de 20.0 mL
+    que si AUCUNE segmentation IA n'a jamais tourné pour ce patient — sinon un lesion_vol
+    réellement nul (ex : aucun kyste rénal détecté par task="kidney_cysts", un résultat
+    cliniquement significatif) serait confondu avec "pas de donnée" et écrasé par une
+    valeur fictive. Même principe pur/testable que `_pick_urologie_kidney_volume`.
+
+    "Une segmentation IA a tourné" est déterminé par la présence d'AU MOINS UN segment
+    marqué metadata.source=="ai_segmentation" (peu importe son type) — indépendant de
+    organe_vol, qui peut lui-même retomber sur une estimation par une autre voie.
+    """
+    has_ai_segmentation = any((getattr(s, "metadata_json", None) or {}).get("source") == "ai_segmentation"
+                               for s in segments)
+    lesion_vol = sum(s.volume_ml for s in segments if getattr(s, "type", None) == "lesion")
+    if lesion_vol == 0 and not has_ai_segmentation:
+        return 20.0, "population_estimate"
+    return lesion_vol, "real_segmentation" if has_ai_segmentation else "population_estimate"
+
+
 def _renal_nephrometry(renal_score: Optional[str], dfg_preop: Optional[float],
                         organe_vol: float, resected: float) -> dict:
     """Néphrométrie RENAL (Radius/Exophytic/Nearness/Anterior/Location) → complexité
@@ -107,7 +127,7 @@ async def get_volumetrie(patient_id: str, request: Request, margin_cm: float = 1
     if not p:
         raise HTTPException(404, "Patient introuvable.")
     segments = db.query(models.Segment).filter(models.Segment.patient_id == patient_id).all()
-    lesion_vol = sum(s.volume_ml for s in segments if s.type == "lesion")
+    lesion_vol, lesion_volume_source = _resolve_lesion_volume(segments)
 
     # En urologie, "organe" désigne à la fois les 2 reins, la vessie et les 2
     # surrénales dans la base — un simple sum() mélangerait ces organes distincts.
@@ -121,8 +141,6 @@ async def get_volumetrie(patient_id: str, request: Request, margin_cm: float = 1
     if organe_vol == 0:
         organe_vol = {"hbp": 1450.0, "colorectal": 350.0, "gastrique": 1100.0, "thyroide": 20.0,
                        "thoracique": 4500.0, "cardiaque": 300.0, "urologie": 150.0}.get(p.specialty, 500.0)
-    if lesion_vol == 0:
-        lesion_vol = 20.0
 
     resected = organe_vol * 0.55 + margin_cm * 32
     remnant_pct = round((organe_vol - resected) / organe_vol * 100, 1)
@@ -132,7 +150,7 @@ async def get_volumetrie(patient_id: str, request: Request, margin_cm: float = 1
         "organ_volume_ml": round(organe_vol, 1), "lesion_volume_ml": round(lesion_vol, 1),
         "ratio_lesion_organe_pct": round(lesion_vol / organe_vol * 100, 1),
         "volume_resection_ml": round(resected), "remnant_pct": remnant_pct, "margin_cm": margin_cm,
-        "organ_volume_source": organ_volume_source,
+        "organ_volume_source": organ_volume_source, "lesion_volume_source": lesion_volume_source,
     }
     if p.specialty == "hbp":
         bsa_val = _bsa(p.poids_kg, p.taille_cm)

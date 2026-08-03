@@ -156,6 +156,7 @@
     "renalRealTitle": "🧮 Computed nephrometry (backend)",
     "renalRealPreserved": "Estimated preserved parenchyma",
     "renalRealDfgPredicted": "Predicted post-op. eGFR",
+    "renalRealCystVolume": "Detected kidney cyst volume",
     "renalRealBadgeReal": "🏥 real kidney volume",
     "renalRealBadgeEstimate": "⚠ population estimate",
     "renalRealUnavailable": "Backend not configured — computation unavailable",

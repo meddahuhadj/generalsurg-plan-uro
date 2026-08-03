@@ -1084,3 +1084,86 @@ bugs distincts sont apparus :
   détection automatique du côté atteint nécessiterait une détection de
   lésion (non disponible, voir plus haut), pas juste une heuristique sur les
   volumes.
+
+## Backend + Frontend — Détection réelle de kystes rénaux (task="kidney_cysts")
+
+### Ce qui a été vérifié avant d'écrire du code
+Avant d'intégrer quoi que ce soit, recherche sur les capacités RÉELLES de
+TotalSegmentator (le README affirmait jusqu'ici "pas de modèle dédié pour une
+tumeur rénale/vésicale... la tâche total segmente les organes sains, pas une
+lésion" — à vérifier plutôt qu'à recopier). Résultat : TotalSegmentator
+fournit bien un vrai modèle dédié pour les **kystes** rénaux
+(`task="kidney_cysts"`, labels `kidney_cyst_left`/`kidney_cyst_right`,
+licence Apache-2.0, pas de clé requise) — documenté par ses auteurs comme
+nettement plus précis que le label `kidney_cyst` présent par défaut dans la
+tâche générique `"total"`. En revanche, **aucun modèle officiel de
+segmentation de TUMEUR SOLIDE** rénale/vésicale n'existe à ce jour — contrai-
+rement au foie (`liver_tumor` via `task="liver_vessels"`, déjà utilisé dans
+ce projet). Distinction clinique importante et volontairement non gommée :
+un kyste (pertinent pour Bosniak) n'est pas une tumeur solide (pertinent
+pour le score RENAL).
+
+### Ce qui a été construit
+- **`segmentation_service._run_urologie_cyst_segmentation()`** — appelle
+  `task="kidney_cysts"` en plus de `task="total"` (organes sains), même
+  logique d'appel séparé que `liver_segments`/`liver_vessels` vs le label
+  `"liver"` générique côté hépatique. Résultats ajoutés à `structures_payload`
+  avec `type="lesion"` (et non `type="organe"`) ; aucune entrée créée à
+  volume nul (« pas de kyste détecté » ≠ « kyste de 0 mL », même principe que
+  `liver_tumor`). Ne lève jamais d'exception : un échec de cette tâche
+  spécifique (version de TotalSegmentator sans `kidney_cysts`, etc.) laisse
+  le reste du pipeline urologie (organes sains) intact — le job se termine
+  quand même `"done"`.
+- **`_SEGMENT_TYPE_TO_DB_TYPE`** étendu avec un passthrough `"lesion":
+  "lesion"` — ces nouveaux segments de kyste sont donc automatiquement
+  persistés en base par `_persist_segments_to_db()` (déjà construit dans
+  l'itération précédente), sans code de persistance supplémentaire.
+- **Bug trouvé en creusant, corrigé** :
+  `routers/volumetrie._resolve_lesion_volume()` (extrait de l'endpoint,
+  fonction pure testée séparément) — `lesion_vol == 0` était jusqu'ici
+  TOUJOURS remplacé par une constante de 20.0 mL, y compris quand une vraie
+  segmentation avait tourné et n'avait trouvé aucun kyste (un résultat
+  clinique réel et significatif, pas une absence de donnée). Corrigé : la
+  constante ne s'applique plus que si aucune segmentation IA n'a jamais
+  tourné pour ce patient (détecté via `metadata.source=="ai_segmentation"`,
+  indépendant de `organe_vol`). La réponse expose désormais
+  `lesion_volume_source` en plus de `organ_volume_source`.
+- **Frontend** : le panneau « Néphrométrie calculée (backend) » (construit
+  dans l'itération précédente) affiche maintenant aussi le volume de kyste
+  rénal détecté, avec la même distinction visuelle réel/estimation. Ne
+  remplace toujours pas la lecture qualitative qui détermine le grade de
+  Bosniak — objective seulement la discussion.
+- Traductions ajoutées (`staging.renalRealCystVolume`) dans les 4 langues,
+  parité vérifiée par script.
+
+### Testé réellement
+- **`backend/tests/test_segmentation_urologie.py`** (+3 tests, refactorisé
+  pour suivre 2 appels `totalsegmentator()` distincts au lieu d'un seul) :
+  kystes détectés dans les deux reins avec maillages réels, aucune entrée
+  créée quand aucun kyste n'est trouvé, échec dur de la tâche kidney_cysts
+  sans casser la segmentation des organes sains.
+- **`backend/tests/test_segmentation_db_persistence.py`** (+1 test) :
+  passthrough `type="lesion"` pour un segment de kyste rénal.
+- **`backend/tests/test_volumetrie_urologie.py`** (+4 tests) : le vrai bug
+  ci-dessus — zéro réel jamais écrasé par la constante, zéro par absence de
+  donnée toujours remplacé, kyste réel correctement remonté, segment manuel
+  (sans marqueur IA) ne compte pas comme preuve de segmentation réelle.
+- Suite complète : 61 passed, 1 failed (le même test `test_mllp.py` flaky
+  déjà documenté plus haut dans ce fichier, sans rapport avec ce changement).
+
+### Limites honnêtes
+- Toujours **aucune détection de tumeur SOLIDE** rénale/vésicale — voir plus
+  haut, c'est un vrai manque de l'écosystème TotalSegmentator à ce jour, pas
+  une limite d'intégration de ce projet. La néphrométrie RENAL reste donc
+  entièrement manuelle.
+- Le grade de Bosniak (I/II/IIF/III/IV) reste une évaluation qualitative
+  MANUELLE (parois, cloisons, prise de contraste) — un masque de segmentation
+  binaire ne peut objectivement pas la déterminer, quelle que soit la
+  précision du modèle. Le volume détecté objective la discussion, il ne la
+  remplace pas et ne doit jamais être présenté comme tel.
+- Non testé contre une vraie inférence `kidney_cysts` (pas de GPU/poids de
+  modèle dans ce sandbox, même limite documentée partout ailleurs dans ce
+  fichier) — seule la logique de sélection de tâche/labels/dispatch/
+  résilience aux échecs est vérifiée.
+- Non testé dans un vrai navigateur — même limite que l'itération
+  précédente pour le câblage frontend (badge, affichage du volume).

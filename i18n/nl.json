@@ -156,6 +156,7 @@
     "renalRealTitle": "🧮 Berekende nefrometrie (backend)",
     "renalRealPreserved": "Geschat behouden parenchym",
     "renalRealDfgPredicted": "Voorspelde postoperatieve eGFR",
+    "renalRealCystVolume": "Gedetecteerd niercystevolume",
     "renalRealBadgeReal": "🏥 echt niervolume",
     "renalRealBadgeEstimate": "⚠ populatieschatting",
     "renalRealUnavailable": "Backend niet geconfigureerd — berekening niet beschikbaar",

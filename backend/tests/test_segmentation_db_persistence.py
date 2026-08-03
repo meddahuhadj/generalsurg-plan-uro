@@ -83,6 +83,23 @@ def test_persist_maps_foie_to_organe_and_tumeur_to_lesion(db_session_factory):
     assert rows["Tumeur hépatique"].type == "lesion"
 
 
+def test_persist_kidney_cyst_lesion_entries_from_urologie_pipeline(db_session_factory):
+    """Les kystes rénaux (segmentation_service._run_urologie_cyst_segmentation) arrivent
+    déjà avec type="lesion" (passthrough dans _SEGMENT_TYPE_TO_DB_TYPE) — pas de mapping
+    intermédiaire comme "tumeur" côté hépatique."""
+    _make_patient(db_session_factory, specialty="urologie")
+    result_segments = [
+        {"organ": "kidney_left", "type": "organe", "volume_ml": 140.0, "label": "Rein gauche"},
+        {"organ": "kidney_cyst_left", "type": "lesion", "volume_ml": 4.5, "label": "Kyste rénal gauche"},
+    ]
+    seg._persist_segments_to_db("P-TEST-1", "job-cyst", result_segments)
+
+    rows = {r.label: r for r in _segments_for("P-TEST-1", db_session_factory)}
+    assert rows["Rein gauche"].type == "organe"
+    assert rows["Kyste rénal gauche"].type == "lesion"
+    assert rows["Kyste rénal gauche"].volume_ml == 4.5
+
+
 def test_persist_skips_couinaud_sub_segments_to_avoid_double_counting(db_session_factory):
     """Les 8 segments de Couinaud sont des PARTIES du foie déjà comptées dans
     l'entrée "foie" — les persister aussi en type="organe" ferait sommer le

@@ -156,6 +156,7 @@
     "renalRealTitle": "🧮 قياس نفرومتري محسوب (الخادم)",
     "renalRealPreserved": "النسيج الكلوي المحفوظ المقدر",
     "renalRealDfgPredicted": "معدل الترشيح الكبيبي المتوقع بعد الجراحة",
+    "renalRealCystVolume": "حجم الكيسة الكلوية المكتشفة",
     "renalRealBadgeReal": "🏥 حجم كلوي حقيقي",
     "renalRealBadgeEstimate": "⚠ تقدير سكاني",
     "renalRealUnavailable": "الخادم غير مُهيأ — الحساب غير متاح",

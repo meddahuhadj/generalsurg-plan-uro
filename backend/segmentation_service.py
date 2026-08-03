@@ -96,6 +96,7 @@ MESH_COLORS = {
     "kidney": (139, 90, 43, 200),
     "urinary_bladder": (250, 204, 21, 180),
     "adrenal_gland": (168, 85, 247, 180),
+    "kidney_cyst": (56, 189, 248, 220),
 }
 
 # Un seul job lourd (GPU) à la fois par défaut — augmentez si vous avez
@@ -214,12 +215,14 @@ def _maybe_build_lowpoly_twin_mesh(job_id: str, target_faces: int = 1500) -> Opt
 # ------------------------------------------------------------------
 # result["segments"] mélange des types "métier" différents selon le pipeline
 # (voir _run_segmentation_job / _run_urologie_segmentation_job) : "organe"
-# (urologie), "foie"/"tumeur" (hépatique), "segment" (sous-division de
-# Couinaud). Seuls les organes entiers et les lésions doivent alimenter
-# Segment.type ("organe"/"lesion", consommés par routers/volumetrie.py) — les
-# 8 segments de Couinaud sont des PARTIES du foie déjà comptées dans "foie" ;
-# les additionner en plus gonflerait organ_volume_ml en double.
-_SEGMENT_TYPE_TO_DB_TYPE = {"organe": "organe", "foie": "organe", "tumeur": "lesion"}
+# (urologie : reins/vessie/surrénales), "lesion" (urologie : kystes rénaux,
+# déjà au bon type source == cible), "foie"/"tumeur" (hépatique), "segment"
+# (sous-division de Couinaud). Seuls les organes entiers et les lésions
+# doivent alimenter Segment.type ("organe"/"lesion", consommés par
+# routers/volumetrie.py) — les 8 segments de Couinaud sont des PARTIES du
+# foie déjà comptées dans "foie" ; les additionner en plus gonflerait
+# organ_volume_ml en double.
+_SEGMENT_TYPE_TO_DB_TYPE = {"organe": "organe", "foie": "organe", "tumeur": "lesion", "lesion": "lesion"}
 
 
 def _persist_segments_to_db(patient_id: str, job_id: str, result_segments: List[dict]) -> None:
@@ -266,6 +269,15 @@ def _persist_segments_to_db(patient_id: str, job_id: str, result_segments: List[
 # GÉNÉRIQUE "total" de TotalSegmentator (roi_subset), pas un modèle dédié
 # comme liver_segments/liver_vessels pour le foie (aucun n'existe pour le
 # rein/la vessie dans TotalSegmentator à ce jour).
+#
+# Kystes rénaux (task="kidney_cysts", labels kidney_cyst_left/right) : un vrai
+# modèle DÉDIÉ existe bien dans TotalSegmentator (licence Apache-2.0, pas de
+# clé de licence requise), distinct et documenté par ses auteurs comme
+# nettement plus précis que le label "kidney_cyst" présent par défaut dans la
+# tâche générique "total" — d'où un appel totalsegmentator() séparé, même
+# logique que liver_segments/liver_vessels vs le label "liver" générique.
+# Un KYSTE n'est PAS une TUMEUR SOLIDE : voir la distinction dans le
+# docstring de _run_urologie_segmentation_job ci-dessous, qui compte.
 # ------------------------------------------------------------------
 _UROLOGIE_ROIS = ["kidney_left", "kidney_right", "urinary_bladder",
                    "adrenal_gland_left", "adrenal_gland_right"]
@@ -279,17 +291,69 @@ _UROLOGIE_MESH_COLOR_KEY = {
     "urinary_bladder": "urinary_bladder",
     "adrenal_gland_left": "adrenal_gland", "adrenal_gland_right": "adrenal_gland",
 }
+_UROLOGIE_CYST_ROIS = ["kidney_cyst_left", "kidney_cyst_right"]
+_UROLOGIE_CYST_DISPLAY_NAMES = {
+    "kidney_cyst_left": "Kyste rénal gauche", "kidney_cyst_right": "Kyste rénal droit",
+}
+
+
+def _run_urologie_cyst_segmentation(job_id: str, nifti_input: Path, job_dir: Path, job: dict) -> List[dict]:
+    """Segmentation DÉDIÉE des kystes rénaux (task="kidney_cysts") — labels
+    kidney_cyst_left/right. Ne lève JAMAIS d'exception : une version de
+    TotalSegmentator sans cette tâche (ou tout autre échec) ne doit pas faire
+    échouer le reste du pipeline urologie (organes sains) — mêmes principe
+    défensif que `_maybe_build_mesh`. Retourne [] en cas d'échec ou d'absence
+    de kyste détecté (volume nul non reporté, cohérent avec `liver_tumor`
+    dans le pipeline hépatique : "pas de tumeur" ≠ "tumeur de 0 mL")."""
+    try:
+        from totalsegmentator.python_api import totalsegmentator
+        from totalsegmentator.map_to_binary import class_map
+
+        cysts_out = job_dir / "kidney_cysts.nii.gz"
+        totalsegmentator(
+            input=str(nifti_input), output=str(cysts_out),
+            task="kidney_cysts", ml=True, output_type="nifti",
+            device=DEVICE, fast=FAST_MODE, quiet=True,
+        )
+        name_to_label = {v: k for k, v in class_map["kidney_cysts"].items()}
+
+        entries: List[dict] = []
+        for roi in _UROLOGIE_CYST_ROIS:
+            label = name_to_label.get(roi)
+            if label is None:
+                continue
+            vol_ml = _label_volumes_ml(cysts_out, {label: roi}).get(roi, 0.0)
+            if vol_ml <= 0:
+                continue
+            entry = {"organ": roi, "type": "lesion",
+                      "label": _UROLOGIE_CYST_DISPLAY_NAMES.get(roi, roi), "volume_ml": vol_ml}
+            entry["mesh_url"] = _maybe_build_mesh(
+                job_id, cysts_out, label_value=label, name=roi,
+                color=MESH_COLORS["kidney_cyst"], job=job,
+            )
+            entries.append(entry)
+        return entries
+    except Exception as e:  # noqa: BLE001
+        logger.error("Échec de la segmentation des kystes rénaux (task=kidney_cysts, job=%s): %s", job_id, e)
+        return []
 
 
 def _run_urologie_segmentation_job(job_id: str, nifti_input: Path, patient_id: str,
                                     job: dict, t0: float) -> dict:
     """
     LIMITES HONNÊTES (en plus de celles du module, voir en-tête du fichier) :
-      - Pas de modèle dédié pour une tumeur rénale/vésicale (contrairement à
-        liver_tumor pour le foie) : la tâche "total" segmente les organes
-        pleins sains, pas une lésion. La néphrométrie RENAL et la
-        classification de Bosniak restent des évaluations MANUELLES (voir le
-        panneau de staging urologie) — cette segmentation ne les automatise pas.
+      - Kystes rénaux (kidney_cyst_left/right) : DÉTECTÉS via un vrai modèle
+        dédié (task="kidney_cysts") — voir _run_urologie_cyst_segmentation.
+        Utile pour objectiver le volume d'un kyste discuté en classification
+        de Bosniak, mais NE remplace PAS la lecture qualitative (parois,
+        cloisons, prise de contraste) qui détermine le grade de Bosniak
+        lui-même — celui-ci reste une évaluation MANUELLE (panneau de staging).
+      - TUMEUR SOLIDE rénale/vésicale : PAS DÉTECTÉE (contrairement au kyste
+        ci-dessus, ou à liver_tumor pour le foie) — TotalSegmentator n'a, à ce
+        jour, aucun modèle officiel de segmentation de masse rénale/vésicale
+        SOLIDE. La néphrométrie RENAL reste donc une évaluation MANUELLE
+        (panneau de staging) : cette segmentation fournit le volume rénal
+        sain réel (voir routers/volumetrie.py), pas la tumeur elle-même.
       - Pas de vaisseaux rénaux isolés (pas d'équivalent à liver_vessels).
       - La PROSTATE N'EST PAS segmentée : TotalSegmentator "total" est
         entraîné sur CT, où le contraste des tissus mous prostatiques est
@@ -334,18 +398,27 @@ def _run_urologie_segmentation_job(job_id: str, nifti_input: Path, patient_id: s
     kidney_total_ml = round(sum(e["volume_ml"] for e in structures_payload
                                  if e["organ"] in ("kidney_left", "kidney_right")), 1)
 
+    job["progress"] = "Segmentation des kystes rénaux (TotalSegmentator, tâche 'kidney_cysts')..."
+    cyst_entries = _run_urologie_cyst_segmentation(job_id, nifti_input, job_dir, job)
+    structures_payload.extend(cyst_entries)
+    kidney_cysts_total_ml = round(sum(e["volume_ml"] for e in cyst_entries), 1)
+
     return {
         "patient_id": patient_id,
         "segments": structures_payload,
         "vessels": [],
         "kidney_total_ml": kidney_total_ml,
-        "model": "TotalSegmentator (nnU-Net) — task: total, roi_subset=" + ",".join(_UROLOGIE_ROIS),
+        "kidney_cysts_total_ml": kidney_cysts_total_ml,
+        "model": ("TotalSegmentator (nnU-Net) — tasks: total (roi_subset=" + ",".join(_UROLOGIE_ROIS)
+                   + "), kidney_cysts"),
         "processing_time_s": round(time.time() - t0, 1),
         "note": (
-            "Organes pleins uniquement (reins, surrénales, vessie) — pas de modèle dédié pour "
-            "une tumeur rénale/vésicale ni pour les vaisseaux rénaux (contrairement au foie). "
-            "Prostate non incluse (nécessite IRM, hors périmètre CT). Néphrométrie RENAL et "
-            "classification de Bosniak restent des évaluations manuelles (panneau de staging)."
+            "Organes pleins sains (reins, surrénales, vessie) + kystes rénaux réellement détectés "
+            "(task=kidney_cysts) — mais AUCUNE tumeur SOLIDE rénale/vésicale (pas de modèle officiel "
+            "TotalSegmentator pour ça, contrairement au foie). Pas de vaisseaux rénaux isolés. "
+            "Prostate non incluse (nécessite IRM, hors périmètre CT). Néphrométrie RENAL et grade de "
+            "Bosniak restent des évaluations manuelles (panneau de staging) ; le volume de kyste "
+            "détecté ici objective la discussion de Bosniak sans remplacer la lecture qualitative."
         ),
     }
 
