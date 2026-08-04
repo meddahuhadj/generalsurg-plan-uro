@@ -32,6 +32,5 @@ jobs:
           APP_ENV: development
           SEED_DEMO_USERS: "true"
           JWT_SECRET: ci-test-secret-not-for-production-use
-          RESEARCH_MODE: "false"
         run: |
           python -m pytest tests/ -v

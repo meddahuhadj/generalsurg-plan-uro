@@ -1,14 +1,19 @@
 # Manuel Technique d'Administration Hospitalière & Ingénierie Biomédicale
-## GeneralSurgPlan3D NextGen — Architecture & Interopérabilité (2026–2046)
+## GeneralSurgPlan3D — Architecture & Interopérabilité (PACS / HL7)
 
-**Version :** 2.4.0-Enterprise-MDR  
-**Classification Réglementaire :** CE MDR 2017/745 Classe IIb / C & FDA 510(k) Equivalence  
-**Cible :** Directeurs des Systèmes d'Information (DSI), Ingénieurs Biomédicaux & Administrateurs PACS hospitaliers.
+**Version :** prototype (non versionné pour un usage clinique)  
+**Classification réglementaire : AUCUNE.** Ce logiciel n'a fait l'objet d'AUCUNE certification CE MDR
+2017/745, d'AUCUNE évaluation par un organisme notifié, et d'AUCUNE soumission FDA 510(k) — voir
+`GET /api/v2/compliance/mdr-fda-status`, qui déclare honnêtement "NOT_CERTIFIED"/"NOT_SUBMITTED".
+Une version antérieure de ce document affirmait à tort une "Classification CE MDR Classe IIb/C &
+FDA 510(k) Equivalence" : cette affirmation était fabriquée et a été retirée. **Ne pas utiliser en
+contexte clinique réel sans engager une démarche réglementaire réelle au préalable.**  
+**Cible :** Directeurs des Systèmes d'Information (DSI), Ingénieurs Biomédicaux & Administrateurs PACS hospitaliers — pour évaluation technique et planification d'une éventuelle mise en conformité, pas pour un déploiement clinique en l'état.
 
 ---
 
-## 1. Vue d'Ensemble de l'Infrastructure et Règlements de Sécurité
-GeneralSurgPlan3D NextGen est conçu comme un micro-écosystème conteneurisé à haute disponibilité, déployable en centre de traumatologie ou en hôpital universitaire.
+## 1. Vue d'Ensemble de l'Infrastructure
+GeneralSurgPlan3D est conçu comme un micro-écosystème conteneurisé, déployable en environnement de test dans un centre hospitalier (PACS, HL7, base de données). Le schéma ci-dessous décrit l'architecture technique réelle du prototype, pas un déploiement de production certifié.
 
 ```
 +-----------------------------------------------------------------------------------+
@@ -30,10 +35,17 @@ GeneralSurgPlan3D NextGen est conçu comme un micro-écosystème conteneurisé �
 +-----------------------------------------------------------------------------------+
 ```
 
-### Exigences de Cybersécurité (HIPAA & RGPD Santé)
-- **Chiffrement au Repos (Data at Rest) :** Tous les volumes de stockage (bases PostgreSQL et répertoires de maillages PACS) sont chiffrés en **AES-256-GCM**.
-- **Chiffrement en Transit (Data in Transit) :** L'application n'accepte que les connexions **TLS 1.3** avec Perfect Forward Secrecy (PFS).
-- **Inviolabilité Médico-Légale :** Chaque action (planification, dictée CCAM, clampage) est scellée par un hash **SHA-256** chaîné dans la table `audit_logs`. Toute altération manuelle en base rompt la chaîne et déclenche une alerte de sécurité.
+### Cybersécurité — état réel, pas un objectif présenté comme acquis
+- **Chiffrement au repos :** NON implémenté par le code applicatif lui-même (pas de AES-256-GCM ni
+  équivalent dans ce dépôt — vérifiable, aucune occurrence dans `backend/`). Si requis, doit être
+  configuré au niveau de l'infrastructure de déploiement (chiffrement de volume PostgreSQL, disque
+  chiffré), pas fourni par cette application.
+- **Chiffrement en transit :** dépend entièrement de la configuration du reverse proxy/TLS devant
+  l'application (non fourni ni imposé par le code applicatif — voir `backend/db.py` / déploiement).
+- **Intégrité de l'audit trail :** chaque entrée de `audit_logs` porte un hash **SHA-256** individuel
+  (intégrité technique de CETTE entrée), mais il n'y a PAS de chaînage cryptographique vérifié entre
+  entrées (pas de type blockchain) ni de détection/alerte automatique en cas d'altération manuelle en
+  base. Ne pas présenter cette propriété comme une preuve d'inviolabilité médico-légale.
 
 ---
 
@@ -58,7 +70,7 @@ Dans le fichier `orthanc.json` de l'hôpital, autorisez les requêtes du routeur
     "EnableQidoRs": true
   },
   "RegisteredUsers": {
-    "surgadmin": "SuperSecretSurgPwd2026"
+    "surgadmin": "REMPLACER_PAR_UN_MOT_DE_PASSE_FORT_GENERE"
   }
 }
 ```
@@ -78,23 +90,25 @@ Pour alimenter le module peropératoire **🏥 Bloc IA (SurgOR-AI)** et déclenc
 
 ---
 
-## 4. Déploiement et Maintenance en Production (Docker / Kubernetes)
+## 4. Déploiement (Docker)
+Seul `docker-compose.yml` est fourni dans ce dépôt (pas de manifeste Kubernetes) — un déploiement
+Kubernetes réel resterait à écrire.
 
-### Démarrage de la Stack Industrielle
-Sur le serveur Linux GPU (NVIDIA RTX A6000 / L40S) du centre de calcul hospitalier :
+### Démarrage de la stack
 ```bash
-# 1. Cloner le workspace clinique
+# 1. Cloner le dépôt
 cd /opt/generalsurgplan3d
 
 # 2. Lancer l'assemblage et le démarrage des conteneurs
 docker compose -f docker-compose.yml up -d --build
 
-# 3. Vérifier la santé du système et la conformité SHA-256
-docker exec -it generalsurg_app python backend/healthcheck_nextgen.py
+# 3. Vérifier la disponibilité HTTP des endpoints (pas une preuve de conformité, voir backend/healthcheck.py)
+docker exec -it generalsurg_app python backend/healthcheck.py
 ```
 
-### Procédure de Sauvegarde & Sauvetage Après Sinistre (Disaster Recovery)
-Le chaînage cryptographique SHA-256 nécessite une sauvegarde cohérente et simultanée de la base de données et des maillages :
+### Sauvegarde
+Sauvegarde cohérente et simultanée de la base de données et des maillages (pas de garantie de
+chaînage cryptographique entre entrées, voir plus haut) :
 ```bash
 # Snapshot quotidien à chaud (sans interruption de service au bloc)
 docker exec generalsurg_db pg_dump -U surguser -d generalsurg_db -F c -b -v -f /tmp/backup_db_$(date +%F).dump
@@ -103,5 +117,8 @@ tar -czf /mnt/nfs_hospital/backups/generalsurg_backup_$(date +%F).tar.gz /tmp/ba
 
 ---
 
-## 5. Support Technique et Maintenance Rétrocompatible (2026–2046)
-Conformément au cahier des charges sur 20 ans, le noyau relationnel et les contrats d'API (`/api/v2/`) sont scellés. Les futures extensions (Phase 8+) devront impérativement s'enregistrer via des modules complémentaires (Plugins MONAI / Three.js WebGPU) sans modifier le schéma relationnel sous-jacent ni invalider les signatures SHA-256 historiques.
+## 5. Compatibilité des contrats d'API
+Les endpoints sous `/api/v2/` visent la stabilité, mais rien ici n'est contractuellement garanti à
+long terme — ce dépôt est un prototype, pas un produit versionné avec une politique de support
+formelle. Toute extension future doit respecter le schéma relationnel existant (`backend/models.py`,
+migrations Alembic) plutôt que de le modifier rétroactivement.

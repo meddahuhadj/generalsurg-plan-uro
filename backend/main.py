@@ -323,58 +323,6 @@ for _mod_name, _router_attr in _real_services:
         logger.warning("Service %s.%s non chargé: %s", _mod_name, _router_attr, e)
         PACS_ROUTER_AVAILABLE = False
 
-# ── Services EXPLORATOIRES (Jalons M21-M40) ─────────────────────────────────
-# Nanorobots, interface cerveau-machine, cryo-BNCT, bio-impression, etc. Ce
-# sont des concepts de recherche, PAS des dispositifs médicaux validés — ils
-# ne doivent JAMAIS être exposés en production. Désactivés par défaut ; ne se
-# chargent que si RESEARCH_MODE=true est explicitement positionné dans
-# l'environnement (jamais en clinique, uniquement pour démonstration interne
-# ou R&D encadrée). Voir aussi le Mode Recherche du frontend (bouton 🔬),
-# qui doit rester cohérent avec ce flag côté serveur.
-#
-# monai_pipeline_v2 est inclus ici (et non dans _real_services) car audité et
-# confirmé n'appeler ni torch ni monai : il retourne des volumes hépatiques et
-# segments de Couinaud FIXES et IDENTIQUES pour tout patient (aucun calcul
-# réel), tout en écrivant un enregistrement 'READY' en base avec un hash
-# d'audit — sans jamais l'indiquer. Non utilisé par le frontend actuel
-# (voir index.html / assets/app-part2.js, qui appelle /segmentation/auto et
-# segmentation_service.py, la vraie intégration TotalSegmentator).
-#
-# real_patient_dicom_mesh_service a été déplacé ici depuis _real_services :
-# malgré son nom, il ne contacte aucun PACS et n'exécute aucune IA — c'est un
-# dictionnaire codé en dur de 2 patients fictifs, auparavant étiqueté
-# "CERTIFIED_CLINICAL_REAL_ANATOMY". Corrigé pour être honnête (voir le
-# fichier), mais reste un module de démonstration, pas un flux clinique réel.
-RESEARCH_MODE = os.environ.get("RESEARCH_MODE", "false").strip().lower() in ("1", "true", "yes")
-_exploratory_services = [
-    "monai_pipeline_v2",
-    "webxr_spatial_service",
-    "robotic_ras_service",
-    "genai_microsurgery_service",
-    "pqc_bioprinting_service",
-    "bci_cortical_service",
-    "nanorobotics_swarm_service",
-    "autonomous_robotic_laser_service",
-    "epigenetic_sonogenetics_service",
-    "raman_spectroscopy_plasma_service",
-    "cryo_ire_bnct_service",
-    "organoid_biomimetic_assembly_service",
-    "iknife_reims_theranostics_service",
-    "real_patient_dicom_mesh_service",
-]
-if RESEARCH_MODE:
-    logger.warning("RESEARCH_MODE=true — chargement des services exploratoires "
-                   "NON VALIDÉS CLINIQUEMENT. Ne jamais activer ce flag en production.")
-    for _mod_name in _exploratory_services:
-        try:
-            _mod = __import__(_mod_name)
-            app.include_router(_mod.router)
-        except Exception as e:  # noqa: BLE001
-            logger.warning("Service exploratoire %s non chargé: %s", _mod_name, e)
-else:
-    logger.info("Mode clinique (RESEARCH_MODE=false) — %d services exploratoires non chargés",
-                len(_exploratory_services))
-
 
 # ---------------------------------------------------------------------------
 # Santé / méta — /health (liveness) + /readyz (readiness)

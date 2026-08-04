@@ -37,7 +37,6 @@ os.environ.setdefault("DATABASE_URL", f"sqlite:///{_TEST_DB_PATH.as_posix()}")
 os.environ.setdefault("SEED_DEMO_USERS", "true")
 os.environ.setdefault("JWT_SECRET", "test-secret-not-for-production-use")
 os.environ.setdefault("APP_ENV", "development")
-os.environ.setdefault("RESEARCH_MODE", "false")
 
 
 @pytest.fixture(scope="session")

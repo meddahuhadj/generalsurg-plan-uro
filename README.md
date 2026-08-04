@@ -1226,3 +1226,85 @@ test au niveau HTTP (seule la fonction `mesh_export` sous-jacente l'était).
   pertinente sans validation.
 - Non testé dans un vrai navigateur — même limite que les itérations
   précédentes pour le câblage frontend.
+
+## Nettoyage — Suppression des services de recherche spéculatifs, backend recentré sur le clinique
+
+### Pourquoi
+`backend/` contenait 13 fichiers de service ("Jalons M15-M40") simulant des
+concepts de recherche sans aucun lien avec ce qui est réellement implémenté
+ailleurs dans ce projet : interface cerveau-machine, essaim nanorobotique,
+cryo-électroporation + BNCT, bio-impression 4D, spectrométrie Raman/plasma
+froid, robot chirurgical autonome L5, télé-chirurgie post-quantique,
+organoïdes biomimétiques, théranostique iKnife/Actinium-225, entraînement
+VR/AR, et un faux pipeline "MONAI" qui n'appelait ni torch ni monai. Chacun
+était déjà honnêtement disclaimé (⚠️ MODULE DE RECHERCHE SPÉCULATIF) et
+désactivé par défaut (`RESEARCH_MODE=false`) par une itération précédente —
+mais leur seule PRÉSENCE dans le dépôt, à côté du vrai travail clinique
+(segmentation TotalSegmentator, PACS DICOMweb/DIMSE, HL7/FHIR), nuisait à la
+crédibilité de l'ensemble. Supprimés, pas juste désactivés.
+
+### Ce qui a été fait
+- **13 fichiers supprimés** : `autonomous_robotic_laser_service.py`,
+  `bci_cortical_service.py`, `cryo_ire_bnct_service.py`,
+  `epigenetic_sonogenetics_service.py`, `genai_microsurgery_service.py`,
+  `iknife_reims_theranostics_service.py`, `monai_pipeline_v2.py`,
+  `nanorobotics_swarm_service.py`, `organoid_biomimetic_assembly_service.py`,
+  `pqc_bioprinting_service.py`, `raman_spectroscopy_plasma_service.py`,
+  `robotic_ras_service.py`, `webxr_spatial_service.py`. Vérifié au
+  préalable : aucun test (backend/tests/ ni tests/ racine) ni endpoint
+  frontend n'en dépendait — seul `main.py` les référençait, dans le bloc
+  `RESEARCH_MODE` désormais entièrement retiré.
+- **`backend/real_patient_dicom_mesh_service.py`** (dictionnaire codé en dur
+  de 2 patients fictifs, déjà démasqué comme non réel malgré son nom
+  d'origine) déplacé vers **`backend/demo/demo_patient_dicom_mesh_service.py`**
+  et retiré du routing de l'API — plus aucune trace dans `main.py`, y
+  compris derrière un flag d'environnement. Reste un exemple de code
+  consultable, mais ne peut plus être exposé accidentellement.
+- **`backend/voice_llm_service.py`** conservé et câblé (il ne dépend
+  d'aucun matériel spéculatif), mais recadré : docstring de module réécrit
+  pour se présenter d'emblée comme un EXEMPLE DE STRUCTURE de compte-rendu
+  CCAM, pas un « assistant de dictée ». Tag de router `voice-llm-nextgen` →
+  `example-ccam-report-structure-not-a-real-dictation-assistant`. Fonction
+  `generate_operative_report_ccam` (docstring prétendant à tort un « LLM
+  spécialisé en chirurgie ») → `build_example_ccam_report_structure`
+  (docstring honnête). Classe `DictateReportRequest` →
+  `ExampleCcamReportInput`. **Les champs de réponse JSON, chemins
+  d'endpoint et logique d'appariement de mots-clés n'ont PAS changé**
+  (contrat déjà exercé par `tests/test_compliance_fda_mdr.py`).
+- **`backend/healthcheck_nextgen.py`** renommé `backend/healthcheck.py`,
+  étape de smoke-test sur l'ex-endpoint MONAI supprimée (n'existe plus).
+- **`ADMIN_MANUAL_PACS_HL7.md`** — trouvaille la plus sérieuse de ce
+  nettoyage, hors périmètre initialement demandé mais corrigée : ce document
+  affirmait une **fausse classification réglementaire** (« CE MDR 2017/745
+  Classe IIb/C & FDA 510(k) Equivalence ») et un chiffrement au repos
+  AES-256-GCM **jamais implémenté nulle part dans le code** (vérifié par
+  recherche exhaustive), en contradiction directe avec le tableau de bord
+  honnête de `voice_llm_service.py` (`NOT_CERTIFIED`/`NOT_SUBMITTED`).
+  Corrigé pour refléter l'absence réelle de certification et l'absence
+  réelle de chiffrement applicatif au repos ; branding "NextGen 2026-2046"
+  et référence Kubernetes (inexistant dans ce dépôt) retirés.
+- `RESEARCH_MODE` retiré de `.env.example`, `tests/conftest.py` et
+  `.github/workflows/tests.yml` (CI) — plus rien ne le lit.
+
+### Testé réellement
+- `python -c "import main"` : l'app démarre proprement après suppression.
+- `pytest tests/test_compliance_fda_mdr.py` (7 tests, dont un qui exerce
+  précisément le contrat JSON de `/api/v2/voice/dictate-report` après son
+  recadrage) : 7 passed — le renommage interne n'a rien cassé du contrat
+  public.
+- Suite complète (`backend/tests/` + `tests/` racine, la suite réellement
+  utilisée par la CI) relancée après coup — voir résultat ci-dessous.
+
+### Limite honnête — ce qui reste à traiter, hors périmètre de cette passe
+La demande portait sur le **backend**. Le frontend (`index.html`) contient
+un volume substantiel de contenu parallèle non touché ici : un bouton
+« Mode Recherche » qui révèle des modales entières (Interface BCI, Essaim
+Nanorobotique, Spectrométrie Raman/Plasma, Cryo-IRE & BNCT, Organoïdes 4D,
+iKnife/Ac-225…) avec des fonctions `simulate*Action()` générant des
+notifications à pourcentages fabriqués (« 99.99% Apoptose », « Marge R0
+certifiée », « 99.8% Spécificité »). Ce contenu ne dépend d'AUCUN des
+fichiers backend supprimés ici (aucun `fetch()` vers ces anciens endpoints
+n'a été trouvé) — sa suppression est donc indépendante de ce nettoyage et
+n'a pas été faite : à traiter comme une décision séparée, le volume
+(plusieurs centaines de lignes de modales + JS) dépassant le périmètre
+explicitement demandé pour cette passe.

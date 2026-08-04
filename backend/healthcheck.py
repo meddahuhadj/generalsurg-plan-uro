@@ -1,23 +1,20 @@
 # -*- coding: utf-8 -*-
 """
-healthcheck_nextgen.py — Diagnostic de disponibilité HTTP (pas un contrôle de conformité)
+healthcheck.py — Diagnostic de disponibilité HTTP (pas un contrôle de conformité)
 ===================================================================================
 Script de fumée (smoke test) qui vérifie que quelques endpoints répondent en HTTP 200/201.
-⚠️ Ce script affichait auparavant le faux statut "CERTIFIED_COMPLIANT" du tableau de bord de
-conformité comme s'il s'agissait d'une vérification réelle — corrigé pour refléter que
-`/compliance/mdr-fda-status` renvoie désormais honnêtement "NOT_CERTIFIED" par défaut, et que ce
-script ne teste QUE la disponibilité HTTP des endpoints, pas leur conformité réglementaire ni
-l'exactitude clinique de leurs réponses (plusieurs modules qu'il sonde restent des simulations,
-voir les avertissements dans biomechanics_engine.py et voice_llm_service.py).
+Ne teste QUE la disponibilité HTTP des endpoints, jamais leur conformité réglementaire ni
+l'exactitude clinique de leurs réponses (plusieurs modules qu'il sonde restent des simulations
+explicitement étiquetées comme telles — voir les avertissements dans biomechanics_engine.py et
+voice_llm_service.py).
 Vérifie uniquement :
     1. La disponibilité de l'API FastAPI et la latence de réponse.
     2. Que le endpoint de statut de conformité répond (sans valider une quelconque conformité réelle).
-    3. La disponibilité du endpoint de segmentation MONAI de recherche (nécessite RESEARCH_MODE=true).
-    4. La disponibilité du endpoint de dictée CCAM (démonstration, pas un vrai NLP — voir voice_llm_service.py).
+    3. La disponibilité de l'exemple de gabarit de compte-rendu CCAM (voir voice_llm_service.py —
+       appariement de mots-clés, pas un vrai NLP).
 """
 
 import sys
-import json
 import time
 import requests
 
@@ -25,13 +22,13 @@ API_BASE_URL = "http://localhost:8000/api/v2"
 
 def run_healthcheck():
     print("====================================================================")
-    print("🏥 GeneralSurgPlan3D NextGen — Diagnostic Système & Conformité MDR")
+    print("🏥 GeneralSurgPlan3D — Diagnostic de disponibilité")
     print("====================================================================")
-    
+
     all_ok = True
-    
+
     # 1. Disponibilité du endpoint de statut de conformité (PAS une preuve de conformité réelle)
-    print("\n[1/4] Vérification de la disponibilité du tableau de bord de statut MDR / FDA...")
+    print("\n[1/3] Vérification de la disponibilité du tableau de bord de statut MDR / FDA...")
     t0 = time.time()
     try:
         resp = requests.get(f"{API_BASE_URL}/compliance/mdr-fda-status", timeout=5)
@@ -40,7 +37,7 @@ def run_healthcheck():
             data = resp.json()
             eu_status = data["regulatory_certifications"]["eu_mdr_2017_745"]["status"]
             print(f"      ✅ Endpoint disponible ({lat:.1f} ms) — statut déclaré: {eu_status} "
-                  f"(honnête depuis la correction : NOT_CERTIFIED tant qu'aucune évaluation réelle n'a été menée)")
+                  f"(honnête : NOT_CERTIFIED tant qu'aucune évaluation réelle n'a été menée)")
             print(f"      Événements d'audit journalisés: {data['cryptographic_audit_trail']['total_logged_events']}")
         else:
             print(f"      ❌ ERREUR HTTP {resp.status_code}: {resp.text}")
@@ -50,7 +47,7 @@ def run_healthcheck():
         all_ok = False
 
     # 2. Disponibilité du modèle cinématique respiratoire simplifié (PAS un solveur FEM validé)
-    print("\n[2/4] Test du modèle cinématique respiratoire simplifié...")
+    print("\n[2/3] Test du modèle cinématique respiratoire simplifié...")
     t0 = time.time()
     try:
         resp = requests.get(f"{API_BASE_URL}/biomech/twins/twin-test-01/respiratory-displacement?phase_rad=1.57", timeout=5)
@@ -66,27 +63,8 @@ def run_healthcheck():
         print(f"      ⚠️ Erreur réseau: {e}")
         all_ok = False
 
-    # 3. Test du endpoint de recherche MONAI — nécessite RESEARCH_MODE=true, désactivé par défaut
-    print("\n[3/4] Test du endpoint de recherche MONAI (nécessite RESEARCH_MODE=true)...")
-    t0 = time.time()
-    try:
-        resp = requests.get("http://localhost:8000/api/v2/monai/models", timeout=5)
-        lat = (time.time() - t0) * 1000
-        if resp.status_code == 200:
-            data = resp.json()
-            print(f"      ✅ Endpoint disponible ({lat:.1f} ms) — {len(data.get('available_models', []))} entrées "
-                  f"(module de recherche non validé cliniquement, RESEARCH_MODE actif).")
-        elif resp.status_code == 404:
-            print(f"      ℹ️  404 attendu si RESEARCH_MODE=false (comportement par défaut, pas une anomalie).")
-        else:
-            print(f"      ❌ ERREUR HTTP {resp.status_code}")
-            all_ok = False
-    except Exception as e:
-        print(f"      ⚠️ Erreur réseau: {e}")
-        all_ok = False
-
-    # 4. Test du endpoint de dictée CCAM (démonstration par mots-clés, pas un vrai NLP/LLM)
-    print("\n[4/4] Test du endpoint de génération de brouillon de compte-rendu CCAM...")
+    # 3. Test de l'exemple de gabarit CCAM (appariement de mots-clés, pas un vrai NLP/LLM)
+    print("\n[3/3] Test de l'exemple de gabarit de compte-rendu CCAM...")
     t0 = time.time()
     try:
         payload = {
@@ -102,7 +80,7 @@ def run_healthcheck():
         if resp.status_code == 201:
             data = resp.json()
             ccam = data["ccam_codes_assigned"][0]["code"] if data["ccam_codes_assigned"] else "UNKNOWN"
-            print(f"      ✅ Endpoint disponible ({lat:.1f} ms) — brouillon généré (méthode: "
+            print(f"      ✅ Endpoint disponible ({lat:.1f} ms) — brouillon d'exemple généré (méthode: "
                   f"{data.get('generation_method', 'inconnue')}), acte CCAM indicatif: {ccam}")
         else:
             print(f"      ❌ ERREUR HTTP {resp.status_code}")

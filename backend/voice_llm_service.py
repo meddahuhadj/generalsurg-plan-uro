@@ -1,24 +1,30 @@
 # -*- coding: utf-8 -*-
 """
-voice_llm_service.py — Prototype de compte-rendu CCAM & tableau de bord de conformité (Jalons M7 & M8)
+voice_llm_service.py — EXEMPLE DE STRUCTURE DE DONNÉES pour un compte-rendu opératoire codé CCAM
 ================================================================================================
-⚠️ AVERTISSEMENT HONNÊTE (lu avant tout usage réel) :
-Ce module est un PROTOTYPE DE DÉMONSTRATION. Il ne contient AUCUN traitement NLP/LLM réel
-(la "dictée vocale" est un simple appariement de mots-clés par `if/elif`), et le tableau de bord
-de conformité ne reflète PAS un état de certification réel — aucune évaluation de conformité
-MDR/FDA n'a été menée sur cette plateforme. Voir `get_mdr_fda_compliance_dashboard()` ci-dessous,
-qui renvoie désormais un état honnête ("NOT_CERTIFIED") au lieu de valeurs fabriquées.
-Ne jamais utiliser la sortie de ce module comme document médico-légal opposable ou comme preuve
-de conformité réglementaire.
+Ceci n'est PAS un assistant de dictée, PAS un LLM, et PAS une plateforme certifiée. C'est un exemple
+de référence qui montre :
+  (a) à quoi peut ressembler la STRUCTURE d'un compte-rendu opératoire codé CCAM/CIM-10 avec export
+      FHIR, si une vraie brique NLP/LLM de dictée venait un jour s'y brancher — la fonction
+      `build_example_ccam_report_structure()` ci-dessous ne fait qu'un appariement de mots-clés
+      `if/elif` sur le texte reçu, remplit ce gabarit de section, et le retourne ; aucun traitement
+      du langage n'a lieu.
+  (b) une réponse HONNÊTE et non fabriquée pour un tableau de bord de statut réglementaire
+      (`get_mdr_fda_compliance_dashboard()`) : "NOT_CERTIFIED" partout, plutôt que d'inventer une
+      certification MDR/FDA qui n'existe pas.
 
-Fonctionnalités (état réel) :
-    1. Appariement de mots-clés (PAS de NLP/LLM) sur la transcription fournie par l'appelant.
-    2. Structuration du texte en sections fixes, avec les valeurs de la transcription insérées
-       telles quelles quand détectées, sinon des libellés génériques.
+Ne jamais utiliser la sortie de ce module comme document médico-légal opposable, comme preuve de
+conformité réglementaire, ou comme brouillon jugé "prêt" sans relecture intégrale par un chirurgien
+codeur — voir `legal_status` dans la réponse de `/dictate-report`, qui le dit explicitement.
+
+État réel de ce qui est implémenté :
+    1. Appariement de mots-clés (PAS de NLP/LLM) sur le texte fourni par l'appelant.
+    2. Structuration de ce texte dans un gabarit de sections fixes (exemple de forme d'un
+       compte-rendu, pas un résumé intelligent).
     3. Proposition de codes CCAM/CIM-10 à TITRE INDICATIF (pas de moteur de codage médical réel,
        pas de valeur de facturation) — à valider systématiquement par le chirurgien codeur.
-    4. Bundle FHIR de démonstration (pas de signature légale, malgré le hash SHA-256 qui garantit
-       seulement l'intégrité technique du contenu, pas sa valeur juridique).
+    4. Bundle FHIR d'exemple (pas de signature légale, malgré le hash SHA-256 qui garantit
+       seulement l'intégrité technique du contenu stocké, pas sa valeur juridique).
     5. Tableau de bord de conformité HONNÊTE : reflète l'absence de certification réelle.
 """
 
@@ -45,21 +51,24 @@ from logging_config import get_logger
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/api/v2/voice", tags=["voice-llm-nextgen"])
+router = APIRouter(prefix="/api/v2/voice", tags=["example-ccam-report-structure-not-a-real-dictation-assistant"])
 compliance_router = APIRouter(prefix="/api/v2/compliance", tags=["mdr-fda-compliance"])
 
 # ---------------------------------------------------------------------------
 # Modèles Pydantic pour la dictée CCAM et la conformité
 # ---------------------------------------------------------------------------
 
-class DictateReportRequest(BaseModel):
+class ExampleCcamReportInput(BaseModel):
+    """Forme d'entrée pour l'exemple de structure de compte-rendu ci-dessous. `raw_voice_transcript`
+    est un simple champ texte : AUCUNE reconnaissance vocale n'a lieu ici, l'appelant doit fournir du
+    texte déjà transcrit (par exemple, à la main, pour tester le gabarit)."""
     patient_id: str = Field(..., description="ID unique du patient")
     twin_id: Optional[str] = Field(None, description="ID du jumeau numérique 3D associé à l'opération")
     surgeon_username: str = Field("dr.hadj", description="Identifiant du chirurgien opérateur")
     specialty: str = Field("HBP", description="Spécialité chirurgicale (HBP, Colorectal, Thoracique...)")
     raw_voice_transcript: str = Field(
         ...,
-        description="Transcription vocale brute ou notes dictées au bloc opératoire",
+        description="Texte déjà transcrit (pas un enregistrement audio) — sert d'entrée à l'appariement de mots-clés",
         json_schema_extra={"example": "Patient installé en décubitus dorsal. Abord par sous-costale droite élargie. Exploration confirmant une lésion tissulaire du segment 7 et 8 de 4.5 cm. Réalisation d'une hépatectomie droite réglée avec clampage pédiculaire de manœuvre de 18 minutes. Section parenchymateuse au CUSA et LigaSure. Hémostase soigneuse, colle biologique, drain de Blake en sous-hépatique. Fermeture en deux plans."},
     )
     request_fhir_cda: bool = Field(True, description="Générer l'export au format standard FHIR R5 ClinicalDocument XML/JSON")
@@ -70,18 +79,20 @@ class DictateReportRequest(BaseModel):
 GENERATED_REPORTS: Dict[str, Dict[str, Any]] = {}
 
 # ---------------------------------------------------------------------------
-# Endpoints de génération LLM de compte-rendu CCAM (Jalon M7)
+# Exemple de gabarit de compte-rendu CCAM (appariement de mots-clés, PAS un LLM)
 # ---------------------------------------------------------------------------
 
 @router.post("/dictate-report", status_code=status.HTTP_201_CREATED)
-async def generate_operative_report_ccam(
-    req: DictateReportRequest,
+async def build_example_ccam_report_structure(
+    req: ExampleCcamReportInput,
     db: Session = Depends(get_db)
 ):
     """
-    Analyse la dictée vocale brute du chirurgien à l'aide d'un LLM spécialisé en chirurgie.
-    Extrait automatiquement les étapes opératoires, assigne la cotation CCAM/CIM-10 et
-    génère un compte-rendu structuré et signé cryptographiquement en SHA-256.
+    Remplit un GABARIT d'exemple de compte-rendu opératoire par appariement de mots-clés sur le
+    texte fourni (PAS de LLM, PAS de NLP réel — voir le docstring du module). Assigne une cotation
+    CCAM/CIM-10 à titre indicatif et retourne une structure signée par un hash SHA-256 d'intégrité
+    technique (pas une signature électronique légale). Sert d'exemple de FORME de sortie, pas de
+    fonctionnalité de dictée réelle.
     """
     report_id = str(uuid.uuid4())
     now_utc = datetime.now(timezone.utc).isoformat()

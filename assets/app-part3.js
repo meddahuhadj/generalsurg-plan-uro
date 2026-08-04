@@ -2509,8 +2509,8 @@
             // Applique les résultats de segmentation à l'UI et au canvas 3D
             _applyResult(data, patId, fromCache) {
               // Correctif honnêteté (audit) : ce pipeline retombe très souvent sur
-              // _generateLocalPatientData() (backend /api/v2/patient-anatomy indisponible par défaut,
-              // gated derrière RESEARCH_MODE — voir real_patient_dicom_mesh_service.py) qui invente des
+              // _generateLocalPatientData() (backend /api/v2/patient-anatomy non monté — voir
+              // backend/demo/demo_patient_dicom_mesh_service.py, exemple hors API) qui invente des
               // volumes à partir d'un hash de l'ID patient. Avant ce correctif, cette estimation locale
               // était affichée EXACTEMENT comme un résultat réel : "Réel CERTIFIÉ", "SHA-256 ✓". Désormais
               // distingué explicitement via data.is_local_simulation / data.is_real_patient_anatomy.

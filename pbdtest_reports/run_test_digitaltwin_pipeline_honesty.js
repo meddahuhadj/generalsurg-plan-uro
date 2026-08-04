@@ -1,8 +1,8 @@
 // Test du code RÉEL (extrait des fichiers assets/app-part*.js) pour la découverte la plus grave
 // de l'audit : digitalTwinPipeline, qui tourne AUTOMATIQUEMENT à chaque changement de patient
 // (aucune action chirurgien requise), appelle le backend /api/v2/patient-anatomy/... — un
-// endpoint déplacé derrière RESEARCH_MODE (voir real_patient_dicom_mesh_service.py, fictif par
-// nature). Par défaut, cet appel échoue donc TOUJOURS, et le pipeline retombe sur
+// endpoint qui n'est plus jamais monté (voir backend/demo/demo_patient_dicom_mesh_service.py,
+// fictif par nature, déplacé hors de l'API). Cet appel échoue donc TOUJOURS, et le pipeline retombe sur
 // _generateLocalPatientData(), qui invente des volumes à partir d'un hash de l'ID patient.
 //
 // Avant correctif : _applyResult() affichait cette estimation locale EXACTEMENT comme un

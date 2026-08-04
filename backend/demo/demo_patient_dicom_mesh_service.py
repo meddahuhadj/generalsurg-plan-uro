@@ -1,14 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-real_patient_dicom_mesh_service.py — Prototype de démonstration (Jalon M37)
+backend/demo/demo_patient_dicom_mesh_service.py — Exemple de démonstration, HORS API
 ===================================================================================================
-⚠️ AVERTISSEMENT HONNÊTE : malgré son nom et sa documentation d'origine, ce module NE fait AUCUNE
-ingestion PACS réelle, AUCUNE segmentation IA réelle, et NE calcule AUCUN maillage 3D réel. C'est un
-dictionnaire codé en dur de deux patients FICTIFS ("Sophie Martin", "Jean Dupont") dont les volumes,
-diagnostics et fichiers .gltf référencés n'existent pas sur disque.
+⚠️ Ce fichier est un EXEMPLE DE CODE, pas un service applicatif : il n'est PLUS importé ni monté
+par `backend/main.py` (déplacé hors de `backend/`, dans ce dossier `demo/`, précisément pour qu'il
+ne puisse plus être exposé accidentellement, même via un flag d'environnement). Si vous voulez
+l'utiliser, il faut l'importer et l'inclure explicitement dans une app FastAPI vous-même.
 
-Ce module est désormais chargé uniquement en mode recherche (`RESEARCH_MODE=true`, voir
-`backend/main.py`) et n'est plus actif par défaut, car il n'a rien de "réel" malgré son nom.
+Anciennement `real_patient_dicom_mesh_service.py` : malgré ce nom et sa documentation d'origine, ce
+module NE fait AUCUNE ingestion PACS réelle, AUCUNE segmentation IA réelle, et NE calcule AUCUN
+maillage 3D réel. C'est un dictionnaire codé en dur de deux patients FICTIFS ("Sophie Martin",
+"Jean Dupont") dont les volumes, diagnostics et fichiers .gltf référencés n'existent pas sur disque.
 
 Pour une intégration PACS → segmentation → maillage réellement fonctionnelle, voir
 `backend/pacs_router.py` / `backend/pacs_router_v2.py` (import DICOMweb/DIMSE réel) et
