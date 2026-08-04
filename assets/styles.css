@@ -269,19 +269,12 @@
       scrollbar-width: thin
     }
 
-    /* ── Mode Clinique (défaut) vs Mode Recherche ──────────────────────────
-   Par défaut, seuls les outils validés/utilisables au bloc sont visibles.
-   Les modules exploratoires (Jalons M21-M40 : nanorobots, BCI, cryo-BNCT,
-   iKnife/Ac-225, etc.) restent dans le code mais sont masqués tant que le
-   chirurgien n'active pas explicitement le Mode Recherche. */
-    .top-nav .nav-explore {
-      display: none
-    }
-
-    body.research-mode .top-nav .nav-explore {
-      display: flex
-    }
-
+    /* ── Mode Clinique (défaut) vs Mode Maintenance ──────────────────────────
+   Par défaut, le chirurgien ne voit qu'un poste de travail clinique standard.
+   Le Mode Maintenance (bouton 🔬) révèle uniquement les paramètres techniques
+   (⚙ Gemini/Groq, URL backend, voir .admin-only ci-dessous) — les anciens
+   modules exploratoires spéculatifs qu'il révélait ont été supprimés du
+   frontend, pas juste masqués (voir README, section nettoyage). */
     body.research-mode .top-nav {
       background: repeating-linear-gradient(135deg, rgba(234, 179, 8, .05), rgba(234, 179, 8, .05) 10px, transparent 10px, transparent 20px)
     }

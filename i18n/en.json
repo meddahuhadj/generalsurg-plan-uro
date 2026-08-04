@@ -41,7 +41,7 @@
     "surgnav": "GPS Nav",
     "surgvoice": "Assistant",
     "mdrFda": "Compliance",
-    "researchToggle": "Research Mode — reveals exploratory modules not clinically validated (Milestones M21-M40)",
+    "researchToggle": "Maintenance Mode — reveals technical settings (⚙), reserved for outside the OR",
     "dashToggle": "OR Dashboard",
     "orToggle": "Operating Room Mode (shared screen)",
     "touchToggle": "Touch mode (enlarged targets)",
@@ -52,7 +52,7 @@
     "patientsToggle": "Patients",
     "exitOr": "Exit OR Mode",
     "exitDash": "Exit Dashboard",
-    "researchBanner": "🔬 RESEARCH MODE ACTIVE — the modules shown above are exploratory (Milestones M21-M40), not clinically validated, and must not be used for decision-making in the OR."
+    "researchBanner": "🔬 MAINTENANCE MODE ACTIVE — technical settings (⚙, API keys, backend URL) are visible. Reserved for configuration outside the OR."
   },
   "lang": {
     "selectorLabel": "Language",

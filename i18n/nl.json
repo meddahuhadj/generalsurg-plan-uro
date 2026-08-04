@@ -41,7 +41,7 @@
     "surgnav": "GPS-navigatie",
     "surgvoice": "Assistent",
     "mdrFda": "Conformiteit",
-    "researchToggle": "Onderzoeksmodus — toont experimentele modules die niet klinisch gevalideerd zijn (mijlpalen M21-M40)",
+    "researchToggle": "Onderhoudsmodus — toont technische instellingen (⚙), voorbehouden buiten de OK",
     "dashToggle": "OK-dashboard",
     "orToggle": "Operatiekamermodus (gedeeld scherm)",
     "touchToggle": "Aanraakmodus (vergrote knoppen)",
@@ -52,7 +52,7 @@
     "patientsToggle": "Patiënten",
     "exitOr": "OK-modus verlaten",
     "exitDash": "Dashboard verlaten",
-    "researchBanner": "🔬 ONDERZOEKSMODUS ACTIEF — de hierboven getoonde modules zijn experimenteel (mijlpalen M21-M40), niet klinisch gevalideerd, en mogen niet worden gebruikt voor besluitvorming in de operatiekamer."
+    "researchBanner": "🔬 ONDERHOUDSMODUS ACTIEF — technische instellingen (⚙, API-sleutels, backend-URL) zijn zichtbaar. Voorbehouden voor configuratie buiten de OK."
   },
   "lang": {
     "selectorLabel": "Taal",

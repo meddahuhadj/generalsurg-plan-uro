@@ -1295,16 +1295,82 @@ crédibilité de l'ensemble. Supprimés, pas juste désactivés.
 - Suite complète (`backend/tests/` + `tests/` racine, la suite réellement
   utilisée par la CI) relancée après coup — voir résultat ci-dessous.
 
-### Limite honnête — ce qui reste à traiter, hors périmètre de cette passe
-La demande portait sur le **backend**. Le frontend (`index.html`) contient
-un volume substantiel de contenu parallèle non touché ici : un bouton
-« Mode Recherche » qui révèle des modales entières (Interface BCI, Essaim
+### Limite honnête (à l'époque) — depuis traitée, voir section suivante
+La demande initiale portait sur le **backend**. Le frontend contenait un
+volume substantiel de contenu parallèle non touché à cette étape : un bouton
+« Mode Recherche » révélant des modales entières (Interface BCI, Essaim
 Nanorobotique, Spectrométrie Raman/Plasma, Cryo-IRE & BNCT, Organoïdes 4D,
 iKnife/Ac-225…) avec des fonctions `simulate*Action()` générant des
-notifications à pourcentages fabriqués (« 99.99% Apoptose », « Marge R0
-certifiée », « 99.8% Spécificité »). Ce contenu ne dépend d'AUCUN des
-fichiers backend supprimés ici (aucun `fetch()` vers ces anciens endpoints
-n'a été trouvé) — sa suppression est donc indépendante de ce nettoyage et
-n'a pas été faite : à traiter comme une décision séparée, le volume
-(plusieurs centaines de lignes de modales + JS) dépassant le périmètre
-explicitement demandé pour cette passe.
+notifications à pourcentages fabriqués. Signalé comme trouvaille séparée à
+l'utilisateur, qui a confirmé vouloir la traiter — voir juste en dessous.
+
+## Nettoyage frontend — Suppression du théâtre "Mode Recherche" (suite du nettoyage backend)
+
+### Ce qui a été fait
+Un rapport d'audit externe fourni par l'utilisateur a corroboré indépendamment
+la trouvaille ci-dessus (dizaines de métriques fabriquées : "94.2% succès
+prédit", "0.38 mm RMS", "52 400 vidéos OR", "14.2 ms Paris↔Tokyo"...) et
+confirmé aussi l'exposition des clés API Gemini/Groq côté client (chantier
+suivant, pas traité ici). Après confirmation explicite de l'utilisateur :
+- **12 modales de recherche supprimées d'`index.html`** (790 lignes) :
+  WebXR Spatial Computing, Robotique RAS, GenAI Complications, Téléchirurgie
+  PQC/Bio-4D, Interface BCI, Essaim Nanorobotique, Autonomie L5/Laser,
+  Reprogrammation Épigénétique/Sonogénétique, Raman/Plasma CAP, Cryo-IRE &
+  BNCT, Organoïdes 4D, iKnife REIMS/Ac-225 — bloc HTML entièrement
+  contigu, aucun contenu légitime intercalé.
+- **12 boutons `.nav-explore`** (leurs points d'entrée) retirés du menu.
+- **12 fonctions `simulate*Action()`** (149 lignes, `assets/app-part1.js`)
+  supprimées après vérification qu'aucune n'était référencée ailleurs que
+  dans le bloc HTML déjà supprimé.
+- Le mécanisme "Mode Recherche" (`setResearchMode`, CSS `.research-mode`,
+  bouton 🔬) est **conservé**, car il sert aussi un second usage légitime
+  et sans rapport : masquer le bouton ⚙ Paramètres techniques (clés API,
+  URL backend) pour qu'un chirurgien au bloc ne le voie pas. Rebaptisé
+  « Mode Maintenance » dans les libellés (tooltip, bandeau, notification)
+  pour refléter honnêtement son unique rôle restant — plus aucune mention
+  de « modules exploratoires »/« Jalons M21-M40 » qui n'existent plus.
+  Corrigé dans les 4 langues, **y compris le dictionnaire de secours
+  embarqué `I18N_EMBEDDED` dans `app-part1.js`** (dupliqué des fichiers
+  `i18n/*.json`, trouvé en vérifiant pourquoi une correction précédente
+  des clés `nav.researchToggle`/`nav.researchBanner` dans les JSON seuls
+  n'aurait pas suffi).
+
+### Testé réellement
+- `node -c` sur les 3 fichiers JS modifiés + validation JSON des 4 langues.
+- Sweep par `grep` de tous les identifiants de modales/fonctions supprimés
+  sur l'ensemble du dépôt (JS, HTML, Python, Markdown) : aucune référence
+  résiduelle après nettoyage du dispatcher `data-view` dans le gestionnaire
+  de clic du menu (trouvé lors du sweep — un premier passage avait supprimé
+  les modales et leurs boutons de déclenchement mais oublié les 12 lignes
+  `if (view === '...') openModal('...')` correspondantes, mortes mais
+  toujours présentes).
+- Suite `pbdtest_reports/*.js` (marqueurs de code source) relancée :
+  5/9 passent ; les 4 échecs sont préexistants et sans rapport avec ce
+  changement (`Cannot find module 'three'` — dépendance npm non installée
+  dans ce sandbox — pour 2 scripts ; `I18N is not defined` — stub manquant
+  dans le harnais de `run_test_digitaltwin_pipeline_honesty.js`, zone de
+  code non touchée aujourd'hui — pour 1 script ; le bug déjà documenté de
+  `run_test_i18n.js` pour le dernier).
+- Suite Python complète relancée (`tests/` racine, la suite CI) : 102 passed
+  — aucune régression, cohérent avec le fait qu'aucun fichier backend n'a
+  été modifié dans cette passe.
+
+### Limites honnêtes
+- Le panneau **SurgAI-Decision** (`modal-surgai`, toujours dans `index.html`,
+  bouton toujours visible par défaut — PAS derrière Mode Recherche) contient
+  le même type de contenu fabriqué (« Succès prédit : 94.2%/88.5%/76.0% »,
+  SHAP/Grad-CAM présentés comme une exigence MDR « Zero-Black-Box » alors
+  qu'aucun modèle réel ne les produit) — repéré pendant cette passe mais
+  **volontairement non traité** : différent bouton (`.top-nav`, pas
+  `.nav-explore`), différent risque (visible par défaut, pas cliniquement
+  gated), nécessite une décision séparée de l'utilisateur avant d'y toucher.
+- Sécurisation des clés API Gemini/Groq côté serveur : confirmée comme
+  problème réel (clé Gemini visible dans l'URL de la requête réseau,
+  clé Groq en Bearer côté client), **non traitée** — c'est le deuxième
+  chantier P0 identifié, explicitement reporté à une prochaine passe.
+- Non testé dans un vrai navigateur : la suppression de blocs HTML/JS a été
+  vérifiée par lecture attentive des limites exactes (grep des IDs de
+  modales pour confirmer un bloc contigu, sweep final tous fichiers) et par
+  les tests de marqueurs de code source existants, pas par un clic réel
+  dans l'interface (aucun navigateur dans ce sandbox, limite documentée
+  partout ailleurs dans ce fichier).

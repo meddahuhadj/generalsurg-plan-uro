@@ -41,7 +41,7 @@
     "surgnav": "GPS Nav",
     "surgvoice": "Assistant",
     "mdrFda": "Conformité",
-    "researchToggle": "Mode Recherche — révèle les modules exploratoires non validés cliniquement (Jalons M21-M40)",
+    "researchToggle": "Mode Maintenance — révèle les paramètres techniques (⚙), réservés hors du bloc opératoire",
     "dashToggle": "Tableau de Bord Bloc",
     "orToggle": "Mode Bloc Opératoire (écran partagé)",
     "touchToggle": "Mode tactile (cibles agrandies)",
@@ -52,7 +52,7 @@
     "patientsToggle": "Patients",
     "exitOr": "Sortir Mode OR",
     "exitDash": "Sortir Tableau de Bord",
-    "researchBanner": "🔬 MODE RECHERCHE ACTIVÉ — les modules affichés ci-dessus sont exploratoires (Jalons M21-M40), non validés cliniquement, et ne doivent pas être utilisés pour la prise de décision au bloc."
+    "researchBanner": "🔬 MODE MAINTENANCE ACTIVÉ — les paramètres techniques (⚙, clés API, URL backend) sont visibles. À réserver à la configuration hors du bloc opératoire."
   },
   "lang": {
     "selectorLabel": "Langue",

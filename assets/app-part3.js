@@ -672,19 +672,20 @@
             }, 600);
           }
 
-          // ── Mode Clinique (défaut) / Mode Recherche ──────────────────────────
-          // Masque par défaut les modules exploratoires non validés cliniquement
-          // (Jalons M21-M40 : nanorobots, BCI, cryo-BNCT, iKnife/Ac-225, etc.)
-          // pour que le chirurgien ne voie que les outils utilisables au bloc.
-          // Rien n'est supprimé : le Mode Recherche les révèle explicitement.
+          // ── Mode Clinique (défaut) / Mode Maintenance ──────────────────────────
+          // Masque par défaut les paramètres techniques (⚙ Gemini/Groq, URL backend)
+          // pour que le chirurgien ne voie qu'un poste de travail clinique au bloc.
+          // Les anciens modules exploratoires spéculatifs (nanorobots, BCI, cryo-BNCT,
+          // iKnife/Ac-225, etc.) que ce mode révélait auparavant ont été supprimés du
+          // frontend (pas juste masqués) — voir README, section nettoyage.
           function setResearchMode(on) {
             state.researchMode = !!on;
             document.body.classList.toggle('research-mode', state.researchMode);
             const btn = document.getElementById('btn-research-toggle');
             if (btn) btn.classList.toggle('active', state.researchMode);
             notify(state.researchMode
-              ? '🔬 Mode Recherche activé — modules exploratoires + Paramètres techniques (⚙) visibles'
-              : '✅ Mode Clinique — seuls les outils validés pour le bloc sont affichés', 'info');
+              ? '🔬 Mode Maintenance activé — Paramètres techniques (⚙) visibles'
+              : '✅ Mode Clinique — poste de travail clinique standard', 'info');
           }
           function toggleResearchMode() { setResearchMode(!state.researchMode); }
 
@@ -2232,156 +2233,6 @@
             notify('🗣️ Démonstration : code CCAM ' + rep.code.split(' ')[0] + ' (texte fixe, pas une reconnaissance vocale réelle)', 'info');
           }
 
-          function simulateWebXRGesture(gesture, actionDesc) {
-            const outEl = document.getElementById('webxr-gesture-output');
-            if (outEl) {
-              outEl.style.borderLeftColor = '#06b6d4';
-              outEl.innerHTML = `🥽 <b>GESTE DÉTECTÉ (${gesture}) :</b> ${actionDesc} <br><span style="color:var(--green)">⚡ latence de calcul spatiale : 8.4 ms (WASM WebGPU)</span>`;
-            }
-            notify(`🥽 Geste spatial WebXR traité : ${gesture} — ${actionDesc}`, 'ok');
-          }
-
-          function simulateRoboticHaptic(action, force, desc) {
-            const outEl = document.getElementById('robotic-haptic-output');
-            if (outEl) {
-              outEl.style.borderLeftColor = force >= 4.5 ? '#ef4444' : (force >= 3.0 ? '#eab308' : '#22c55e');
-              outEl.innerHTML = `🤖 <b>RETOUR HAPTIQUE (${action}) :</b> ${desc} <br><strong>⚡ Force mesurée : ${force} N</strong> — Boucle 1000 Hz fibre optique active.`;
-            }
-            if (force >= 4.5) {
-              notify(`🛑 ALERTE SÉCURITÉ ROBOTIQUE : Force ${force} N > Seuil 4.5 N ! Verrouillage d'urgence activé et scellé (SHA-256)`, 'warn');
-            } else {
-              notify(`🦾 Simulation haptique traitée : ${action} (${force} N) — Tissu stable`, 'info');
-            }
-          }
-
-          function simulateGenAIPrediction(spec, eventName, prob, desc) {
-            const outEl = document.getElementById('genai-prediction-output');
-            if (outEl) {
-              outEl.style.borderLeftColor = prob >= 70 ? '#ef4444' : (prob >= 30 ? '#eab308' : '#22c55e');
-              outEl.innerHTML = `🧬 <b>PRÉDICTION GENAI (${eventName}) :</b> ${desc} <br><strong>⚡ Probabilité à 15s : ${prob}%</strong> — Transformer 70B (52 400 vidéos OR).`;
-            }
-            if (prob >= 70) {
-              notify(`🛑 ALERTE COMPLICATION GENAI (${prob}%) : ${eventName} ! Action préventive IA recommandée et scellée dans audit_logs (SHA-256)`, 'warn');
-            } else {
-              notify(`🧬 Prédiction GenAI calculée : ${eventName} (${prob}%) — Trajectoire stable`, 'info');
-            }
-          }
-
-          function simulate4DBioprinting(site, vol, layers, desc) {
-            const outEl = document.getElementById('pqc-bioprint-output');
-            if (outEl) {
-              outEl.style.borderLeftColor = '#10b981';
-              outEl.innerHTML = `🛰️ <b>BIO-IMPRESSION 4D (${site}) :</b> ${desc} <br><strong>⚡ Volume : ${vol} mL | ${layers}</strong> — Bras 6 axes CELLINK BioX à 37°C.`;
-            }
-            notify(`🛰️ Bio-impression 4D calibrée sur ${site} (${vol} mL) — G-code transmis sur réseau LEO 6G PQC`, 'ok');
-          }
-
-          function simulateBciAction(action, force, icms, desc) {
-            const outEl = document.getElementById('bci-haptic-output');
-            if (outEl) {
-              outEl.style.borderLeftColor = force >= 4.8 ? '#ef4444' : (force >= 3.5 ? '#eab308' : '#8b5cf6');
-              outEl.innerHTML = `🧠 <b>INTENTION M1 / HAPTIQUE S1 (${action}) :</b> ${desc} <br><strong>⚡ Force PBD : ${force} N | Stimulation S1 : ${icms} @ 200 Hz</strong> — Puce SNN Loihi 2 (< 2.1 ms).`;
-            }
-            if (force >= 4.8) {
-              notify(`🛑 ALERTE INTERLOCK BCI : Indice de fatigue/tension critique ! Découplage neuronal immédiat (SHA-256)`, 'warn');
-            } else {
-              notify(`🧠 Commande BCI traitée : ${action} (${force} N) — Retour haptique S1 ${icms} perçu dans le cortex`, 'info');
-            }
-          }
-
-          function simulateNanoAction(action, param, stat, desc) {
-            const outEl = document.getElementById('nano-swarm-output');
-            if (outEl) {
-              outEl.style.borderLeftColor = param === 0.0 ? '#ef4444' : (param >= 43.0 ? '#10b981' : '#0ea5e9');
-              outEl.innerHTML = `🔬 <b>ESSAIM NANOROBOTIQUE (${action}) :</b> ${desc} <br><strong>⚡ Télémétrie : ${stat} | Gradient : ${param} T/m (ou °C)</strong> — Arrimage EGFR 98.4%.`;
-            }
-            if (param === 0.0) {
-              notify(`🛑 ALERTE ESSAIM NANOROBOTS : Démagnétisation d'urgence activée ! Essaim dispersé en toute sécurité (SHA-256)`, 'warn');
-            } else {
-              notify(`🔬 Commande nanorobotic traitée : ${action} (${stat}) — Zéro dommage parenchymateux`, 'info');
-            }
-          }
-
-          function simulateAutoAction(action, param, stat, desc) {
-            const outEl = document.getElementById('auto-laser-output');
-            if (outEl) {
-              outEl.style.borderLeftColor = param === 0.0 ? '#ef4444' : (param >= 14.0 ? '#10b981' : '#eab308');
-              outEl.innerHTML = `🤖⚡ <b>AUTONOMIE L5 & SOUDURE LASER (${action}) :</b> ${desc} <br><strong>⚡ Force / Fluence : ${param} J/cm² | Résistance : ${stat}</strong> — Moteur VLA RT-2 (< 0.8 ms).`;
-            }
-            if (param === 0.0) {
-              notify(`🛑 ALERTE TAKEOVER HUMAIN (< 1 ms) : Contrôle rendu au chirurgien par BCI ! Laser sécurisé (SHA-256)`, 'warn');
-            } else {
-              notify(`🤖 Exécution autonome L5 réussie : ${action} (${stat}) — Fusion tissulaire hermétique garantie`, 'info');
-            }
-          }
-
-          function simulateEpiAction(action, param, stat, desc) {
-            const outEl = document.getElementById('epi-sono-output');
-            if (outEl) {
-              outEl.style.borderLeftColor = param === 0.0 ? '#ef4444' : (param >= 150.0 ? '#10b981' : '#22c55e');
-              outEl.innerHTML = `🧬✨ <b>RÉJUVÉNATION & SONOGÉNÉTIQUE (${action}) :</b> ${desc} <br><strong>⚡ Pression FUS / Laser NIR : ${param} MPa (ou mW/cm²) | Horloge : ${stat}</strong> — OSKM ARNm LNP.`;
-            }
-            if (param === 0.0) {
-              notify(`🛑 ALERTE INTERLOCK ONCOGÉNIQUE : Verrouillage anti-tératome activé ! Aucune transformation cellulaire (SHA-256)`, 'warn');
-            } else {
-              notify(`🧬 Commande de réjuvénation épigénétique traitée : ${action} (${stat}) — Tissu régénéré`, 'info');
-            }
-          }
-
-          function simulateRamanAction(action, param, stat, desc) {
-            const outEl = document.getElementById('raman-plasma-output');
-            if (outEl) {
-              outEl.style.borderLeftColor = param === 0.0 ? '#ef4444' : (param >= 10.0 ? '#10b981' : '#06b6d4');
-              outEl.innerHTML = `⚡🔬 <b>SPECTROMÉTRIE RAMAN & PLASMA CAP (${action}) :</b> ${desc} <br><strong>⚡ Tension CAP / Fréquence : ${param} kV (ou Hz) | Résultat : ${stat}</strong> — Apoptose RONS.`;
-            }
-            if (param === 0.0) {
-              notify(`🛑 ALERTE INTERLOCK IONISATION : Coupure haute tension (0 kV) ! Arc électrique évité en toute sécurité (SHA-256)`, 'warn');
-            } else {
-              notify(`⚡ Commande Raman/Plasma traitée : ${action} (${stat}) — Zéro résidu tumoral R0 certifié`, 'info');
-            }
-          }
-
-          function simulateCryoAction(action, param, stat, desc) {
-            const outEl = document.getElementById('cryo-bnct-output');
-            if (outEl) {
-              outEl.style.borderLeftColor = param === 0.0 ? '#ef4444' : (param >= 30.0 ? '#10b981' : '#38bdf8');
-              outEl.innerHTML = `❄️☢️ <b>CRYO-IRE & BNCT NEUTRONS (${action}) :</b> ${desc} <br><strong>⚡ Gradient nsPEF / Bore : ${param} kV/cm (ou ppm) | Statut : ${stat}</strong> — Alpha 2.34 MeV.`;
-            }
-            if (param === 0.0) {
-              notify(`🛑 ALERTE INTERLOCK DOSIMÉTRIE : Absorption neutronique seuil ! Coupure immédiate du faisceau (0 n/cm²/s) ! SHA-256`, 'warn');
-            } else {
-              notify(`❄️ Commande Cryo-IRE/BNCT traitée : ${action} (${stat}) — Tissu tumoral éradiqué à 100%`, 'info');
-            }
-          }
-
-          function simulateOrganoidAction(action, param, stat, desc) {
-            const outEl = document.getElementById('organoid-4d-output');
-            if (outEl) {
-              outEl.style.borderLeftColor = param === 0.0 ? '#ef4444' : (param >= 180.0 ? '#10b981' : '#10b981');
-              outEl.innerHTML = `🧬🌱 <b>ORGANOÏDES 4D & LASER 2PP (${action}) :</b> ${desc} <br><strong>⚡ Lévitation / Laser 2PP : ${param} sphéroïdes (ou mW) | Statut : ${stat}</strong> — Précision 10 µm.`;
-            }
-            if (param === 0.0) {
-              notify(`🛑 ALERTE INTERLOCK HYPOXIE : Risque nécrotique détecté ! Coupure immédiate de l'injection (0 sphéroïde/s) ! SHA-256`, 'warn');
-            } else {
-              notify(`🌱 Commande Organoïdes 4D/2PP traitée : ${action} (${stat}) — Reconstruction fonctionnelle complète`, 'info');
-            }
-          }
-
-          function simulateIknifeAction(action, param, stat, desc) {
-            const outEl = document.getElementById('iknife-ac225-output');
-            if (outEl) {
-              outEl.style.borderLeftColor = param === 0.0 ? '#ef4444' : (param >= 760.0 ? '#f43f5e' : '#10b981');
-              outEl.innerHTML = `🔬💨 <b>iKNIFE REIMS & AC-225 (${action}) :</b> ${desc} <br><strong>⚡ m/z (ou Activité MBq) : ${param} | Statut : ${stat}</strong> — Spécificité 99.95%.`;
-            }
-            if (param === 0.0) {
-              notify(`🛑 ALERTE INTERLOCK RADIOLOGIQUE : Seuil dose alpha atteint ! Coupure immédiate d'injection Actinium-225 (0 MBq) ! SHA-256`, 'warn');
-            } else if (param === 760.6) {
-              notify(`🛑 ALERTE iKNIFE REIMS : Marge R1 détectée (Pic PC 34:1 m/z 760.6) ! Infiltration membranaire — Extension chirurgicale requise !`, 'warn');
-            } else {
-              notify(`💨 Diagnostic iKnife / Tir Ac-225 traité : ${action} (${stat}) — Marge R0 et micro-clusters sécurisés`, 'info');
-            }
-          }
-
           // ════════════════════════════════════════════════
           //  AUTOMATISATION DU FLUX CLINIQUE RÉEL (Jalons M37 & M38)
           // ════════════════════════════════════════════════
@@ -2845,18 +2696,6 @@
                 if (view === 'mdr-fda') { openModal('mdr-fda'); return; }
                 if (view === 'raymarching-dvr') { openModal('raymarching-dvr'); return; }
                 if (view === 'resp-cycle') { openModal('resp-cycle'); return; }
-                if (view === 'webxr') { openModal('webxr'); return; }
-                if (view === 'robotic') { openModal('robotic'); return; }
-                if (view === 'genai-complications') { openModal('genai-complications'); return; }
-                if (view === 'pqc-bioprint') { openModal('pqc-bioprint'); return; }
-                if (view === 'bci-haptic') { openModal('bci-haptic'); return; }
-                if (view === 'nano-swarm') { openModal('nano-swarm'); return; }
-                if (view === 'auto-laser') { openModal('auto-laser'); return; }
-                if (view === 'epi-sono') { openModal('epi-sono'); return; }
-                if (view === 'raman-plasma') { openModal('raman-plasma'); return; }
-                if (view === 'cryo-bnct') { openModal('cryo-bnct'); return; }
-                if (view === 'organoid-4d') { openModal('organoid-4d'); return; }
-                if (view === 'iknife-ac225') { openModal('iknife-ac225'); return; }
                 // 'plan' et 'jumeau' sont de vraies bascules de vue.
                 document.querySelectorAll('.top-nav button[data-view]').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
