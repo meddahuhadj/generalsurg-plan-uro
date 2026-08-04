@@ -113,7 +113,15 @@
     "remnantFunctional": "{pct}% جزء وظيفي متبقٍ",
     "recalculate": "↻ إعادة الحساب",
     "recalculated": "تمت إعادة حساب التحليل",
-    "exportPlan": "⭳ تصدير المخطط (DICOM SR / JSON)"
+    "exportPlan": "⭳ تصدير المخطط (DICOM SR / JSON)",
+    "marginTitle": "📏 مسافة ثلاثية الأبعاد حقيقية (بين بنيتين)",
+    "marginSubtitle": "مسافة سطحية مقاسة بين مجسمين حقيقيين مُجزَّأين — وليست تقديرًا.",
+    "marginSafetyPlaceholder": "هامش الأمان المطلوب (مم، اختياري)",
+    "marginCompute": "احسب المسافة الحقيقية",
+    "marginSameStructure": "اختر بنيتين مختلفتين.",
+    "marginSufficient": "✅ هامش كافٍ",
+    "marginInsufficient": "❌ هامش غير كافٍ",
+    "marginNote": "مسافة سطح إلى سطح تقريبية (أخذ عينات)، لا تكتشف الغزو (المسافة ≈ 0 في هذه الحالة)."
   },
   "staging": {
     "tnmTitle": "🔬 تصنيف TNM",

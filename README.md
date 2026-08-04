@@ -1167,3 +1167,62 @@ pour le score RENAL).
   résilience aux échecs est vérifiée.
 - Non testé dans un vrai navigateur — même limite que l'itération
   précédente pour le câblage frontend (badge, affichage du volume).
+
+## Backend + Frontend — La distance 3D réelle entre structures, jusqu'ici invisible dans l'UI
+
+### Le constat
+`GET /segmentation/margin/{job_id}` (`segmentation_service.get_oncologic_margin`)
+existait déjà et calcule une VRAIE distance 3D (échantillonnage de surface,
+voir `mesh_export.surface_to_surface_min_distance`, déjà testé sur des
+sphères à écart analytiquement connu) entre deux maillages segmentés — mais
+`grep` ne trouvait **aucun appelant frontend, nulle part**. Un vrai calcul,
+accessible par API, jamais exposé à l'écran : même famille de problème que
+le `remnant_pct` codé en dur ou la constante de population trouvés dans les
+deux itérations précédentes. L'endpoint lui-même n'avait par ailleurs aucun
+test au niveau HTTP (seule la fonction `mesh_export` sous-jacente l'était).
+
+### Ce qui a été construit
+- **Frontend** — `state.mpr._lastSegmentationJobId` conserve désormais le
+  `job_id` de la dernière segmentation IA réelle réussie (`runRealSegmentation`
+  et `segmentExistingSeries`, `assets/app-part1.js`), nettoyé dans
+  `resetPatientState()` au changement de patient (ajouté à l'inventaire
+  explicite déjà en place là pour ce type de fuite d'état inter-patient).
+  `loadRealMeshesIntoScene()` conserve la clé exacte de chaque maillage
+  (`userData.organ`, dérivée du **nom de fichier .glb**, pas de `entry.organ`
+  — les deux divergent pour le foie entier : `organ="liver"` mais le fichier
+  s'appelle `liver_total.glb`, piège trouvé en lisant le code plutôt qu'en le
+  supposant).
+- Nouvelle section « 📏 Distance 3D réelle (structure à structure) » dans
+  l'onglet Analyse (`renderRealMeshDistanceSection` / `computeRealMeshDistance`,
+  `assets/app-part3.js`) : deux sélecteurs peuplés dynamiquement avec les
+  structures réellement chargées pour ce patient, un champ de marge de
+  sécurité optionnel, et un appel direct à l'endpoint existant. N'apparaît
+  que si ≥2 structures réelles sont chargées — rien à mesurer sinon, pas de
+  section vide ou trompeuse.
+- Traductions ajoutées (`analysis.margin*`) dans les 4 langues, parité de
+  clés vérifiée par script.
+
+### Testé réellement
+- **`backend/tests/test_segmentation_margin_endpoint.py`** (6 tests,
+  nouveau) — contre l'app FastAPI complète (`TestClient(main.app)`, comme
+  `test_segmentation_capabilities.py`) avec de vrais fichiers GLB générés
+  depuis des sphères à écart connu (35.0 mm) : distance mesurée correcte,
+  seuil de sécurité suffisant/insuffisant, job introuvable (404), job pas
+  terminé (409), structure absente (404).
+- `node -c` sur les fichiers JS modifiés + validation JSON/parité i18n.
+- Suite complète pertinente : 68 passed (62 précédents + 6 nouveaux),
+  1 failed (le même `test_mllp.py` flaky déjà documenté, sans rapport).
+
+### Limites honnêtes
+- Toujours une approximation par échantillonnage de surface (voir la
+  docstring de `surface_to_surface_min_distance`), pas une distance
+  solide-à-solide exacte — une zone de quasi-tangence entre deux points
+  échantillonnés peut être légèrement surestimée. Ne détecte pas non plus
+  un envahissement en tant que tel (distance ≈ 0, sans alerte dédiée).
+- Le choix des deux structures reste manuel (sélecteurs) — aucune paire
+  "recommandée" par spécialité n'est proposée par défaut (ex. tumeur vs
+  vaisseau le plus proche automatiquement) : ça resterait à construire si
+  jugé utile, pas fait ici pour ne pas présumer d'une paire cliniquement
+  pertinente sans validation.
+- Non testé dans un vrai navigateur — même limite que les itérations
+  précédentes pour le câblage frontend.

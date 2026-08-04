@@ -113,7 +113,15 @@
     "remnantFunctional": "{pct}% functional remnant",
     "recalculate": "↻ Recalculate",
     "recalculated": "Analysis recalculated",
-    "exportPlan": "⭳ Export plan (DICOM SR / JSON)"
+    "exportPlan": "⭳ Export plan (DICOM SR / JSON)",
+    "marginTitle": "📏 Real 3D distance (structure to structure)",
+    "marginSubtitle": "Surface distance measured between two real segmented meshes — not an estimate.",
+    "marginSafetyPlaceholder": "Desired safety margin (mm, optional)",
+    "marginCompute": "Compute real distance",
+    "marginSameStructure": "Choose two different structures.",
+    "marginSufficient": "✅ sufficient margin",
+    "marginInsufficient": "❌ insufficient margin",
+    "marginNote": "Approximate surface-to-surface distance (sampling), does not detect invasion (distance ≈ 0 in that case)."
   },
   "staging": {
     "tnmTitle": "🔬 TNM Staging",

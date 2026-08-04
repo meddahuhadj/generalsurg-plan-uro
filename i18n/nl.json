@@ -113,7 +113,15 @@
     "remnantFunctional": "{pct}% functionele rest",
     "recalculate": "↻ Herberekenen",
     "recalculated": "Analyse herberekend",
-    "exportPlan": "⭳ Plan exporteren (DICOM SR / JSON)"
+    "exportPlan": "⭳ Plan exporteren (DICOM SR / JSON)",
+    "marginTitle": "📏 Echte 3D-afstand (structuur tot structuur)",
+    "marginSubtitle": "Oppervlakteafstand gemeten tussen twee echte gesegmenteerde meshes — geen schatting.",
+    "marginSafetyPlaceholder": "Gewenste veiligheidsmarge (mm, optioneel)",
+    "marginCompute": "Echte afstand berekenen",
+    "marginSameStructure": "Kies twee verschillende structuren.",
+    "marginSufficient": "✅ voldoende marge",
+    "marginInsufficient": "❌ onvoldoende marge",
+    "marginNote": "Benaderende oppervlakte-tot-oppervlakte afstand (steekproef), detecteert geen ingroei (afstand ≈ 0 in dat geval)."
   },
   "staging": {
     "tnmTitle": "🔬 TNM-stadiëring",

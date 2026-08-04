@@ -113,7 +113,15 @@
     "remnantFunctional": "{pct}% reste fonctionnel",
     "recalculate": "↻ Recalculer",
     "recalculated": "Analyse recalculée",
-    "exportPlan": "⭳ Exporter le plan (DICOM SR / JSON)"
+    "exportPlan": "⭳ Exporter le plan (DICOM SR / JSON)",
+    "marginTitle": "📏 Distance 3D réelle (structure à structure)",
+    "marginSubtitle": "Distance de surface mesurée entre deux maillages segmentés réels — pas une estimation.",
+    "marginSafetyPlaceholder": "Marge de sécurité souhaitée (mm, optionnel)",
+    "marginCompute": "Calculer la distance réelle",
+    "marginSameStructure": "Choisissez deux structures différentes.",
+    "marginSufficient": "✅ marge suffisante",
+    "marginInsufficient": "❌ marge insuffisante",
+    "marginNote": "Distance approximative surface-à-surface (échantillonnage), ne détecte pas un envahissement (distance ≈ 0 dans ce cas)."
   },
   "staging": {
     "tnmTitle": "🔬 Stadification TNM",

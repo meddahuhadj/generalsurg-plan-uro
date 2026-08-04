@@ -362,6 +362,17 @@
   </div>`;
           }
 
+          // Structures 3D réellement chargées pour ce patient (segmentation IA, pas l'anatomie
+          // procédurale) — alimente les sélecteurs de computeRealMeshDistance() ci-dessous.
+          // `organ` (voir loadRealMeshesIntoScene dans app-part1.js) est la clé EXACTE attendue par
+          // GET /segmentation/margin/{job_id}, dérivée du nom de fichier .glb, pas d'un libellé affiché.
+          function getLoadedRealStructures() {
+            if (!realMeshGroup || !realMeshGroup.children.length) return [];
+            return realMeshGroup.children
+              .map(o => o.userData)
+              .filter(u => u && u.organ);
+          }
+
           function runAnalysis() {
             const a = computeAnalysis();
             const { organVol, dataSource, resectedVol, remnantPct, risk, lvl, scenarios } = a;
@@ -394,11 +405,75 @@
     <div class="psec"><div class="psec-title">${I18N.t('analysis.scenarios')}</div>
       ${scenarios.map(s => `<div class="metric-row"><span class="k">${scenarioLabels[s.key]}</span><span class="v ${s.key === 'expected' ? 'ok' : ''}">${I18N.t('analysis.remnantFunctional', { pct: s.flr })}</span></div>`).join('')}
     </div>
+    ${renderRealMeshDistanceSection()}
     <button class="btn btn-primary" style="width:100%;margin-top:6px" onclick="runAnalysis();notify(I18N.t('analysis.recalculated'),'ok')">${I18N.t('analysis.recalculate')}</button>
     <button class="btn btn-secondary" style="width:100%;margin-top:6px" onclick="exportPlan()">${I18N.t('analysis.exportPlan')}</button>
   `;
             const el = document.getElementById('analyse-body');
             if (el) el.innerHTML = html;
+          }
+
+          // Contrairement à la volumétrie/score de risque ci-dessus (calculs locaux, JS pur), ceci
+          // appelle le VRAI endpoint backend GET /segmentation/margin/{job_id}
+          // (segmentation_service.get_oncologic_margin, construit depuis mesh_export.py) qui mesure une
+          // distance 3D RÉELLE entre deux maillages segmentés (échantillonnage de surface, pas une
+          // estimation) — jusqu'ici accessible côté API mais jamais exposé dans l'UI. N'affiche la
+          // section que si au moins 2 structures réelles sont chargées : rien à mesurer sinon.
+          function renderRealMeshDistanceSection() {
+            const structures = getLoadedRealStructures();
+            if (!state.mpr._lastSegmentationJobId || structures.length < 2) return '';
+            const options = structures.map(s => `<option value="${s.organ}">${s.label}</option>`).join('');
+            return `
+    <div class="psec"><div class="psec-title">${I18N.t('analysis.marginTitle')}</div>
+      <div style="font-size:9px;color:var(--text3);margin-bottom:6px">${I18N.t('analysis.marginSubtitle')}</div>
+      <div style="display:flex;gap:4px;margin-bottom:4px">
+        <select id="margin-structure-a" style="flex:1;font-size:9px;min-width:0">${options}</select>
+        <select id="margin-structure-b" style="flex:1;font-size:9px;min-width:0">${options}</select>
+      </div>
+      <input id="margin-safety-mm" type="number" step="0.5" min="0" placeholder="${I18N.t('analysis.marginSafetyPlaceholder')}" style="width:100%;font-size:9px;margin-bottom:6px">
+      <button class="btn btn-secondary" style="width:100%;font-size:10px" onclick="computeRealMeshDistance()">${I18N.t('analysis.marginCompute')}</button>
+      <div id="margin-result" style="margin-top:6px"></div>
+    </div>`;
+          }
+
+          async function computeRealMeshDistance() {
+            const box = document.getElementById('margin-result');
+            const jobId = state.mpr._lastSegmentationJobId;
+            if (!box) return;
+            if (!jobId || !state.settings.apiBase) {
+              box.innerHTML = `<div style="font-size:9px;color:var(--text3)">${I18N.t('staging.renalRealUnavailable')}</div>`;
+              return;
+            }
+            const structA = document.getElementById('margin-structure-a')?.value;
+            const structB = document.getElementById('margin-structure-b')?.value;
+            if (!structA || !structB || structA === structB) {
+              box.innerHTML = `<div style="font-size:9px;color:#eab308">${I18N.t('analysis.marginSameStructure')}</div>`;
+              return;
+            }
+            const safetyStr = document.getElementById('margin-safety-mm')?.value;
+            const safety = parseFloat(safetyStr);
+            box.innerHTML = `<div style="font-size:9px;color:var(--text3)">${I18N.t('staging.renalRealLoading')}</div>`;
+            try {
+              const base = state.settings.apiBase.replace(/\/+$/, '');
+              const params = new URLSearchParams({ structure_a: structA, structure_b: structB });
+              if (!isNaN(safety)) params.set('safety_margin_mm', safety);
+              const r = await fetch(`${base}/segmentation/margin/${jobId}?${params}`);
+              if (!r.ok) {
+                const body = await r.json().catch(() => ({}));
+                throw new Error(body.detail || ('HTTP ' + r.status));
+              }
+              const d = await r.json();
+              const sufficiencyBadge = d.margin_sufficient === null
+                ? ''
+                : d.margin_sufficient
+                  ? `<span style="font-size:9px;font-weight:700;color:#22c55e;background:#22c55e22;padding:1px 6px;border-radius:8px;margin-left:4px">${I18N.t('analysis.marginSufficient')}</span>`
+                  : `<span style="font-size:9px;font-weight:700;color:#ef4444;background:#ef444422;padding:1px 6px;border-radius:8px;margin-left:4px">${I18N.t('analysis.marginInsufficient')}</span>`;
+              box.innerHTML = `
+      <div style="font-size:16px;font-weight:800;color:var(--accent)">${d.margin_mm} mm ${sufficiencyBadge}</div>
+      <div style="font-size:9px;color:var(--text3);margin-top:2px">${I18N.t('analysis.marginNote')}</div>`;
+            } catch (e) {
+              box.innerHTML = `<div style="font-size:9px;color:#ef4444">${I18N.t('staging.renalRealError')}: ${e.message}</div>`;
+            }
           }
 
           async function exportPlan() {
@@ -549,6 +624,12 @@
               }
               // Dernier calcul de volumétrie/FLR (utilisé en fallback par plusieurs exports).
               state.mpr.lastFLR = null;
+              // job_id de la dernière segmentation IA réelle (voir runRealSegmentation/segmentExistingSeries
+              // dans app-part1.js) — sert à GET /segmentation/margin/{job_id} (distance 3D réelle entre
+              // deux structures, Analyse → computeRealMeshDistance). Sans ce nettoyage, une distance
+              // calculée pour l'ANCIEN patient resterait interrogeable (et potentiellement affichée comme
+              // à jour) après changement de patient, alors que realMeshGroup (ci-dessus) est déjà vidé.
+              state.mpr._lastSegmentationJobId = null;
             }
 
             // Recalage manuel/rigide : seul le résultat (translation/rotation/RMS) est patient-spécifique,

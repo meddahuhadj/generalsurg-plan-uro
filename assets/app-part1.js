@@ -1752,6 +1752,12 @@
                 return;
               }
               await loadRealMeshesIntoScene(result, base);
+              // Conservé pour la distance 3D réelle structure-à-structure (Analyse → computeRealMeshDistance,
+              // GET /segmentation/margin/{job_id}) : sans ce job_id, ce calcul resterait impossible à
+              // déclencher depuis l'UI alors que le backend le supporte déjà (mesh_export.py). Nettoyé au
+              // changement de patient dans resetPatientState() — même principe que les autres champs
+              // state.mpr.* patient-spécifiques listés là-bas.
+              state.mpr._lastSegmentationJobId = job_id;
               // Message générique (pas de champ *_total_ml codé en dur) : le pipeline hépatique
               // renvoie liver_total_ml, le pipeline urologie renvoie kidney_total_ml — aucun des
               // deux n'existe dans tous les cas, donc on affiche la somme des structures réellement
@@ -1821,6 +1827,7 @@
                 return;
               }
               await loadRealMeshesIntoScene(result, base);
+              state.mpr._lastSegmentationJobId = job_id;
               notify(`✓ Segmentation chargée depuis la série importée — ${result.segments.length} structure(s)`, 'ok');
               setRealSegStatus('Segmentation IA réelle chargée ✓');
             } catch (e) {
@@ -1883,7 +1890,14 @@
               try {
                 const gltf = await new Promise((resolve, reject) => gltfLoader.load(url, resolve, undefined, reject));
                 const obj = gltf.scene;
-                obj.userData = { label: entry.label || entry.name || entry.organ, kind: 'real-mesh', volume_ml: entry.volume_ml };
+                // `organ` ici = la clé EXACTE attendue par GET /segmentation/margin/{job_id}
+                // (structure_a/structure_b, voir computeRealMeshDistance dans app-part3.js) — dérivée du
+                // nom de fichier .glb (mesh_url), PAS de entry.organ : pour le foie entier par exemple,
+                // entry.organ="liver" mais le maillage s'appelle "liver_total.glb"
+                // (segmentation_service._run_segmentation_job, name="liver_total") — seul le nom de
+                // fichier est garanti cohérent avec la clé mesh_info côté backend, dans tous les pipelines.
+                const meshKey = entry.mesh_url ? entry.mesh_url.split('/').pop().replace(/\.glb$/, '') : entry.organ;
+                obj.userData = { label: entry.label || entry.name || entry.organ, organ: meshKey, kind: 'real-mesh', volume_ml: entry.volume_ml };
                 // Les maillages sortent du pipeline en mm réels — on les ramène à l'échelle
                 // de la scène (~1-2 unités) de façon cohérente avec l'anatomie procédurale.
                 obj.scale.set(0.012, 0.012, 0.012);
