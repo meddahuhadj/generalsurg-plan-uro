@@ -16,7 +16,7 @@
 
 services:
   - type: web
-    name: generalsurg-plan-demo
+    name: generalsurg-plan-uro
     runtime: docker
     dockerfilePath: ./Dockerfile.render
     plan: free
@@ -32,10 +32,10 @@ services:
         value: "true"
       - key: JWT_SECRET
         generateValue: true
-      # Remplacez par l'URL réelle si vous renommez le service (Render dérive
-      # l'URL publique de "name" ci-dessus : https://<name>.onrender.com).
+      # Render dérive l'URL publique de "name" ci-dessus :
+      # https://generalsurg-plan-uro.onrender.com.
       - key: ALLOWED_ORIGINS
-        value: https://generalsurg-plan-demo.onrender.com
+        value: https://generalsurg-plan-uro.onrender.com
       - key: LOG_LEVEL
         value: INFO
       # Pas de DATABASE_URL défini : bascule automatique sur SQLite local
