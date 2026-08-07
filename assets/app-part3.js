@@ -2480,6 +2480,19 @@
 
             // Point d'entrée principal — appelé automatiquement à chaque changement de patient
             async run(patId, forceReload = false) {
+              // Correctif honnêteté (audit) : ce pipeline (étapes PACS → WADO-RS → TotalSegmentator
+              // → jumeau) n'a jamais été généralisé au-delà du foie — _generateLocalPatientData()
+              // ci-dessous ne calcule QUE des volumes hépatiques (TLV/tumeur/FLR/veine porte). Avant
+              // ce correctif, il se lançait quand même automatiquement pour TOUTES les spécialités
+              // (switchModule()) : un patient urologique/thyroïdien/colorectal voyait s'afficher
+              // "Foie: 1420 mL" dans la bannière anatomie — trompeur même étiqueté "estimation
+              // locale", car l'organe affiché n'est simplement pas le bon. Pour les spécialités
+              // non-HBP, on n'invente aucun chiffre : bandeau neutre renvoyant vers la segmentation
+              // IA réelle par spécialité (voir backend/segmentation_service.py, spécialty=state.mod).
+              if (state.mod !== 'hbp') {
+                this._setNotApplicableBanner();
+                return;
+              }
               // Si même patient déjà en cache et pas de force-reload, applique directement
               if (!forceReload && this._cache[patId]) {
                 this._applyResult(this._cache[patId], patId, true);
@@ -2725,7 +2738,22 @@
               const wrap = document.getElementById('pipeline-progress-wrap');
               if (wrap) wrap.style.display = show ? 'block' : 'none';
             },
-            _delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+            _delay(ms) { return new Promise(r => setTimeout(r, ms)); },
+
+            // Bandeau neutre pour les spécialités non-HBP (voir run()) — pas de fausse barre de
+            // progression PACS/IA, pas de chiffre inventé, juste un renvoi vers la vraie segmentation.
+            _setNotApplicableBanner() {
+              this._showProgress(false);
+              this._running = null;
+              const banner = document.getElementById('anatomy-mode-banner');
+              const icon = document.getElementById('pipeline-status-icon');
+              const title = document.getElementById('anatomy-mode-title');
+              const desc = document.getElementById('anatomy-mode-desc');
+              if (banner) { banner.style.borderColor = 'var(--border)'; banner.style.color = 'var(--text3)'; banner.style.boxShadow = 'none'; }
+              if (icon) icon.textContent = 'ℹ️';
+              if (title) title.textContent = I18N.t('pipeline.notApplicableTitle');
+              if (desc) desc.innerHTML = I18N.t('pipeline.notApplicableDesc');
+            }
           };
 
           // Alias de compatibilité avec les appels existants (bouton Forcer dans la bannière)

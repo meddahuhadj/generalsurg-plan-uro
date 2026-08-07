@@ -304,6 +304,8 @@
     "loadingTitle": "PACS → AI → 3D Twin pipeline in progress...",
     "realTitle": "REAL ANATOMY — Patient-Specific 3D Twin",
     "demoTitle": "DEMO MODE — Procedural Anatomy (Training only)",
-    "estimateTitle": "LOCAL ESTIMATE — Real segmentation backend unavailable (non-clinical)"
+    "estimateTitle": "LOCAL ESTIMATE — Real segmentation backend unavailable (non-clinical)",
+    "notApplicableTitle": "Automatic twin not available for this specialty",
+    "notApplicableDesc": "This automatic pipeline is liver-specific (HBP). For this specialty, use the real AI segmentation (DICOM → Segment) to load the patient's actual anatomy."
   }
 }

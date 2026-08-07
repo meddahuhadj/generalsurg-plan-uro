@@ -39,7 +39,13 @@ for (; i < html.length; i++) {
 const iifeEnd = html.indexOf(';', i) + 1;
 let code = html.slice(start, iifeEnd);
 // `const` déclaré dans un eval() direct reste scopé à cet eval (ES6) — on l'expose sur global.
-code = code.replace('const I18N = (function(){', 'global.I18N = (function(){');
+// Bug corrigé : un .replace() littéral sur 'const I18N = (function(){' (sans espace) ne
+// correspondait plus dès que le code source s'écrivait 'const I18N = (function () {' (avec
+// l'espace habituel avant les parenthèses) — le remplacement échouait silencieusement, l'eval
+// déclarait alors un I18N local jamais exposé sur global, et TOUT le test échouait sur
+// "Cannot read properties of undefined (reading 't')" sans rapport avec le moteur i18n lui-même.
+// Regex (au lieu d'un littéral figé) : robuste à ce genre de reformatage mineur.
+code = code.replace(/const\s+I18N\s*=\s*\(function/, 'global.I18N = (function');
 
 // ── Mocks minimaux ──
 global.localStorage = {

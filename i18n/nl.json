@@ -304,6 +304,8 @@
     "loadingTitle": "PACS → AI → 3D-tweeling pipeline bezig...",
     "realTitle": "ECHTE ANATOMIE — Patiëntspecifieke 3D-tweeling",
     "demoTitle": "DEMOMODUS — Procedurele anatomie (alleen training)",
-    "estimateTitle": "LOKALE SCHATTING — Backend voor echte segmentatie niet beschikbaar (niet-klinisch)"
+    "estimateTitle": "LOKALE SCHATTING — Backend voor echte segmentatie niet beschikbaar (niet-klinisch)",
+    "notApplicableTitle": "Automatische tweeling niet beschikbaar voor deze specialiteit",
+    "notApplicableDesc": "Deze automatische pipeline is leverspecifiek (HBP). Gebruik voor deze specialiteit de echte AI-segmentatie (DICOM → Segmenteren) om de werkelijke anatomie van de patiënt te laden."
   }
 }

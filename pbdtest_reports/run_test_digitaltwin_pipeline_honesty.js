@@ -73,6 +73,16 @@ global.organMesh = null; global.wireframeMesh = null; global.vesselGroup = null;
 global.gltfLoader = null;
 global.state.settings = {};
 global.loadRealMeshesIntoScene = async () => {};
+// _setBanner()/_setNotApplicableBanner() appellent I18N.t(clé) pour les libellés — mock basé sur
+// le VRAI i18n/fr.json (pas un simple echo de la clé) pour que les assertions ci-dessous
+// continuent de vérifier le texte réellement affiché au chirurgien, pas juste la clé choisie.
+const frDict = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'i18n', 'fr.json'), 'utf8'));
+global.I18N = {
+  t(key) {
+    const val = key.split('.').reduce((o, k) => (o && o[k] !== undefined ? o[k] : undefined), frDict);
+    return val !== undefined ? val : key;
+  }
+};
 
 // Cas A : données locales simulées (le cas par défaut désormais, backend RESEARCH_MODE-gated)
 digitalTwinPipeline._applyResult(localData, 'PAT-TEST-999', false);
@@ -96,5 +106,21 @@ const titleReal = document.getElementById('anatomy-mode-title').textContent;
 assert(descReal.includes('✅') && descReal.includes('maillages chargés'), 'données réelles : la description affiche bien le rendu positif normal');
 assert(!titleReal.toLowerCase().includes('indisponible'), 'données réelles : le titre ne montre pas le message d\'indisponibilité');
 assert(global._lastNotify.type === 'ok', 'données réelles : la notification reste de type "ok"');
+
+// ── 3) run() ne doit plus fabriquer de volumétrie HÉPATIQUE pour une spécialité non-HBP ──
+// (2e découverte de l'audit : ce pipeline n'a jamais été généralisé au-delà du foie —
+// _generateLocalPatientData() ci-dessus ne calcule QUE TLV/tumeur/FLR/veine porte — mais se
+// lançait quand même automatiquement pour toutes les spécialités via switchModule(), affichant
+// "Foie: 1420 mL" sur un dossier urologique/thyroïdien/colorectal.)
+global.state.mod = 'urologie';
+let notApplicableCalled = false;
+const originalNotApplicable = digitalTwinPipeline._setNotApplicableBanner.bind(digitalTwinPipeline);
+digitalTwinPipeline._setNotApplicableBanner = () => { notApplicableCalled = true; originalNotApplicable(); };
+digitalTwinPipeline.run('PAT-URO-1');
+assert(notApplicableCalled, "run() redirige vers _setNotApplicableBanner() pour une spécialité non-HBP, sans lancer le pipeline hépatique");
+assert(document.getElementById('anatomy-mode-title').textContent === frDict.pipeline.notApplicableTitle,
+  "le bandeau affiche le message d'indisponibilité pour cette spécialité, pas un chiffre hépatique inventé");
+assert(!('PAT-URO-1' in digitalTwinPipeline._cache), "aucune donnée hépatique n'est mise en cache pour une spécialité non-HBP");
+global.state.mod = 'hbp'; // restaure l'état par défaut pour un éventuel test ultérieur
 
 console.log('\nTerminé.');

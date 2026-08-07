@@ -304,6 +304,8 @@
     "loadingTitle": "Pipeline PACS → IA → Jumeau 3D en cours...",
     "realTitle": "ANATOMIE RÉELLE — Jumeau 3D Patient-Spécifique",
     "demoTitle": "MODE DÉMO — Anatomie Procédurale (Entraînement uniquement)",
-    "estimateTitle": "ESTIMATION LOCALE — Backend de segmentation réelle indisponible (non clinique)"
+    "estimateTitle": "ESTIMATION LOCALE — Backend de segmentation réelle indisponible (non clinique)",
+    "notApplicableTitle": "Jumeau automatique non disponible pour cette spécialité",
+    "notApplicableDesc": "Ce pipeline automatique est spécifique au foie (HBP). Pour cette spécialité, utilisez la segmentation IA réelle (DICOM → Segmenter) pour charger l'anatomie du patient."
   }
 }
