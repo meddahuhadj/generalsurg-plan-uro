@@ -124,6 +124,24 @@ class JobStatus(BaseModel):
 
 
 # ------------------------------------------------------------------
+# Traçabilité du modèle (principe directeur n°6 du cahier des charges :
+# « pas de chiffre clinique sans source — algorithme + version + dataset »)
+# ------------------------------------------------------------------
+def _totalsegmentator_version() -> str:
+    """Version RÉELLEMENT installée du paquet TotalSegmentator (pas une constante codée en dur) —
+    stampée dans result["model"] pour que chaque segmentation reste attribuable à la version exacte
+    qui l'a produite, même après une mise à jour ultérieure du modèle (reproductibilité clinique)."""
+    try:
+        from importlib.metadata import PackageNotFoundError, version
+        try:
+            return version("TotalSegmentator")
+        except PackageNotFoundError:
+            return "version inconnue (métadonnées du paquet introuvables)"
+    except Exception:  # noqa: BLE001 — ne doit jamais faire échouer une segmentation par ailleurs réussie
+        return "version inconnue"
+
+
+# ------------------------------------------------------------------
 # Conversion DICOM -> NIfTI (réelle, via dicom2nifti)
 # ------------------------------------------------------------------
 def _dicom_dir_to_nifti(dicom_dir: Path, out_nifti: Path) -> None:
@@ -409,8 +427,8 @@ def _run_urologie_segmentation_job(job_id: str, nifti_input: Path, patient_id: s
         "vessels": [],
         "kidney_total_ml": kidney_total_ml,
         "kidney_cysts_total_ml": kidney_cysts_total_ml,
-        "model": ("TotalSegmentator (nnU-Net) — tasks: total (roi_subset=" + ",".join(_UROLOGIE_ROIS)
-                   + "), kidney_cysts"),
+        "model": (f"TotalSegmentator v{_totalsegmentator_version()} (nnU-Net) — tasks: total (roi_subset="
+                   + ",".join(_UROLOGIE_ROIS) + "), kidney_cysts"),
         "processing_time_s": round(time.time() - t0, 1),
         "note": (
             "Organes pleins sains (reins, surrénales, vessie) + kystes rénaux réellement détectés "
@@ -533,7 +551,7 @@ def _run_segmentation_job(job_id: str, nifti_input: Path, patient_id: str, speci
             ],
             "liver_total_ml": liver_total_ml,
             "sum_couinaud_ml": round(sum(s["volume_ml"] for s in segments_payload if s["type"] == "segment"), 1),
-            "model": "TotalSegmentator (nnU-Net) — tasks: liver_segments, liver_vessels, total",
+            "model": f"TotalSegmentator v{_totalsegmentator_version()} (nnU-Net) — tasks: liver_segments, liver_vessels, total",
             "processing_time_s": round(time.time() - t0, 1),
             "note": (
                 "Vaisseaux non classifiés porte/artère/sus-hépatique automatiquement — "
@@ -617,6 +635,7 @@ async def capabilities():
 
     return {
         "totalsegmentator": _has("totalsegmentator"),
+        "totalsegmentator_version": _totalsegmentator_version() if _has("totalsegmentator") else None,
         "dicom2nifti": _has("dicom2nifti"),
         "nibabel": _has("nibabel"),
         "mesh_export": _has("skimage") and _has("trimesh"),

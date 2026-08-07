@@ -42,3 +42,10 @@ def test_capabilities_reflects_real_environment():
     assert body["ready_for_mesh_export"] == (
         _importable("skimage") and _importable("trimesh") and body["nibabel"]
     )
+
+    # Traçabilité (principe directeur n°6 du cahier des charges : pas de chiffre clinique sans
+    # source) : la version installée doit être exposée si et seulement si le paquet l'est.
+    if body["totalsegmentator"]:
+        assert isinstance(body["totalsegmentator_version"], str) and body["totalsegmentator_version"]
+    else:
+        assert body["totalsegmentator_version"] is None
