@@ -58,6 +58,7 @@ import routers.dicom as dicom_router
 import routers.volumetrie as volumetrie_router
 import routers.chat as chat_router
 import routers.audit as audit_router
+import routers.plans as plans_router
 from schemas import DicomSRExportRequest, DicomSRExportResponse
 import schemas
 
@@ -274,6 +275,7 @@ app.include_router(dicom_router.router, prefix=API_V1)
 app.include_router(volumetrie_router.router, prefix=API_V1)
 app.include_router(chat_router.router, prefix=API_V1)
 app.include_router(audit_router.router, prefix=API_V1)
+app.include_router(plans_router.router, prefix=API_V1)
 
 # Compatibilité ascendante (anciens chemins, sans prefix)
 app.include_router(auth_router.router)
@@ -282,6 +284,7 @@ app.include_router(dicom_router.router)
 app.include_router(volumetrie_router.router)
 app.include_router(chat_router.router)
 app.include_router(audit_router.router)
+app.include_router(plans_router.router)
 
 # routers/dicom.py charge segmentation_service.py (pipeline réel TotalSegmentator)
 # dans son propre try/except et expose REAL_SEGMENTATION_AVAILABLE : app.mount()

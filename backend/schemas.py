@@ -260,6 +260,88 @@ class AuditOut(BaseModel):
     created_at: datetime
 
 # ---------------------------------------------------------------------------
+# Plans chirurgicaux
+# ---------------------------------------------------------------------------
+
+PlanStatus = Literal[
+    "DRAFT", "AI_PROPOSED", "APPROVED", "IN_PROGRESS", "COMPLETED", "ABORTED"
+]
+
+
+class SurgicalPlanCreate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=256)
+    specialty: Specialty = "hbp"
+    planned_procedure_code: str = Field(default="CCAM", min_length=1, max_length=64)
+    strategy_status: PlanStatus = "DRAFT"
+    safety_margins_mm: float = Field(default=5.0, ge=0, le=50)
+    resection_volume_ml: Optional[float] = Field(None, ge=0)
+    remnant_volume_ml: Optional[float] = Field(None, ge=0)
+    remnant_ratio_pct: Optional[float] = Field(None, ge=0, le=100)
+    estimated_blood_loss_ml: Optional[float] = Field(None, ge=0)
+    estimated_duration_min: Optional[int] = Field(None, ge=0)
+    metadata_json: Dict[str, Any] = Field(default_factory=dict)
+
+
+class SurgicalPlanUpdate(BaseModel):
+    title: Optional[str] = Field(None, min_length=1, max_length=256)
+    planned_procedure_code: Optional[str] = Field(None, min_length=1, max_length=64)
+    strategy_status: Optional[PlanStatus] = None
+    safety_margins_mm: Optional[float] = Field(None, ge=0, le=50)
+    resection_volume_ml: Optional[float] = Field(None, ge=0)
+    remnant_volume_ml: Optional[float] = Field(None, ge=0)
+    remnant_ratio_pct: Optional[float] = Field(None, ge=0, le=100)
+    estimated_blood_loss_ml: Optional[float] = Field(None, ge=0)
+    estimated_duration_min: Optional[int] = Field(None, ge=0)
+    metadata_json: Optional[Dict[str, Any]] = None
+
+
+class SurgicalPlanOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    patient_id: str
+    twin_id: Optional[str] = None
+    lead_surgeon_username: str
+    title: str
+    specialty: str
+    planned_procedure_code: str
+    strategy_status: PlanStatus
+    safety_margins_mm: float
+    resection_volume_ml: Optional[float] = None
+    remnant_volume_ml: Optional[float] = None
+    remnant_ratio_pct: Optional[float] = None
+    estimated_blood_loss_ml: Optional[float] = None
+    estimated_duration_min: Optional[int] = None
+    preop_checklist_status: Dict[str, Any] = {}
+    metadata_json: Dict[str, Any] = {}
+    approved_by_username: Optional[str] = None
+    approved_at: Optional[datetime] = None
+    aborted_by_username: Optional[str] = None
+    aborted_at: Optional[datetime] = None
+    abort_reason: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class SurgicalPlanApprove(BaseModel):
+    """Corps de POST /plans/{plan_id}/approve — la validation clinique n'est pas
+    un simple changement de statut : elle exige une confirmation explicite que
+    le signataire a personnellement revu les données qui fondent le plan."""
+    confirmation: bool = Field(
+        ..., description="Doit être `true` : atteste que le chirurgien a revu "
+                          "les volumes/marges et leur source (segmentation réelle "
+                          "vs estimation) avant d'engager le plan."
+    )
+    comment: Optional[str] = Field(None, max_length=1000)
+
+
+class SurgicalPlanAbort(BaseModel):
+    """Corps de POST /plans/{plan_id}/abort — un abandon de plan chirurgical
+    doit toujours porter un motif tracé (traçabilité clinique/légale)."""
+    reason: str = Field(..., min_length=3, max_length=1000)
+
+
+# ---------------------------------------------------------------------------
 # Export
 # ---------------------------------------------------------------------------
 

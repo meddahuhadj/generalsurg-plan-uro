@@ -304,6 +304,27 @@
             return { label: I18N.t('analysis.riskHigh'), color: '#ef4444' };
           }
 
+          // Transitions de statut autorisées (miroir de routers/plans.py) : une opération ne peut
+          // passer à l'étape suivante que si elle est dans le bon état (APPROVED -> IN_PROGRESS,
+          // pas directement APPROVED -> COMPLETED). ABORTED reste possible depuis tout état actif.
+          // Toute tentative de transition invalide est refusée par le backend (409) et affichée telle quelle.
+          const PLAN_TRANSITIONS = {
+            DRAFT: [{ to: 'APPROVED', i18n: 'planApprove' }, { to: 'ABORTED', i18n: 'planAbort' }],
+            AI_PROPOSED: [{ to: 'APPROVED', i18n: 'planApprove' }, { to: 'ABORTED', i18n: 'planAbort' }],
+            APPROVED: [{ to: 'IN_PROGRESS', i18n: 'planStart' }, { to: 'ABORTED', i18n: 'planAbort' }],
+            IN_PROGRESS: [{ to: 'COMPLETED', i18n: 'planComplete' }, { to: 'ABORTED', i18n: 'planAbort' }],
+            COMPLETED: [],
+            ABORTED: []
+          };
+          const PLAN_STATUS_LABELS = {
+            DRAFT: 'planStatusDraft', AI_PROPOSED: 'planStatusAiProposed', APPROVED: 'planStatusApproved',
+            IN_PROGRESS: 'planStatusInProgress', COMPLETED: 'planStatusCompleted', ABORTED: 'planStatusAborted'
+          };
+          const PLAN_STATUS_COLORS = {
+            DRAFT: '#94a3b8', AI_PROPOSED: '#a78bfa', APPROVED: '#22c55e',
+            IN_PROGRESS: '#38bdf8', COMPLETED: '#22c55e', ABORTED: '#ef4444'
+          };
+
           // Si de vrais maillages de segmentation sont chargés (loadRealMeshesIntoScene, via
           // /segmentation/auto ou /segmentation/from-series), leur volume réel (userData.volume_ml,
           // issu de TotalSegmentator) doit primer sur l'estimation procédurale. Renvoie null si aucun
@@ -408,9 +429,14 @@
     ${renderRealMeshDistanceSection()}
     <button class="btn btn-primary" style="width:100%;margin-top:6px" onclick="runAnalysis();notify(I18N.t('analysis.recalculated'),'ok')">${I18N.t('analysis.recalculate')}</button>
     <button class="btn btn-secondary" style="width:100%;margin-top:6px" onclick="exportPlan()">${I18N.t('analysis.exportPlan')}</button>
+    <div class="psec"><div class="psec-title">${I18N.t('analysis.plansTitle')} <span style="font-size:9px;font-weight:700;color:#64748b;background:#64748b22;padding:1px 6px;border-radius:8px;margin-left:6px">persisté</span></div>
+      <button class="btn btn-primary" style="width:100%;margin-top:6px" onclick="savePlanToBackend()">${I18N.t('analysis.planSave')}</button>
+      <div id="saved-plans" style="margin-top:6px"></div>
+    </div>
   `;
             const el = document.getElementById('analyse-body');
             if (el) el.innerHTML = html;
+            loadSavedPlans();
           }
 
           // Contrairement à la volumétrie/score de risque ci-dessus (calculs locaux, JS pur), ceci
@@ -508,6 +534,179 @@
             }
             downloadJson(payload, `plan_${mod.patient.id}.json`);
             notify('Export local généré (backend non configuré)', 'info');
+          }
+
+          // ── Plans chirurgicaux persistés (backend) ─────────────────────────
+          // Remplace l'export JSON jetable par une vraie persistance côté serveur
+          // (routers/plans.py) : un plan a un cycle de vie DRAFT → APPROVED →
+          // IN_PROGRESS → COMPLETED (+ ABORTED), tracé dans le journal d'audit.
+          // Sert le même calcul honnête que l'onglet Analyse (computeAnalysis),
+          // jamais une estimation dupliquée/désynchronisée.
+          async function plansAuthedFetch(path, opts = {}) {
+            if (!state.settings.apiBase) throw new Error('Backend non configuré');
+            const base = state.settings.apiBase.replace(/\/+$/, '');
+            const token = await getBackendToken();
+            const headers = Object.assign({ 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }, opts.headers || {});
+            const r = await fetch(base + path, Object.assign({}, opts, { headers }));
+            if (!r.ok) {
+              let detail = r.status;
+              try { detail = (await r.json()).detail || detail; } catch (e) { }
+              const err = new Error(String(detail));
+              err.status = r.status; // permet aux appelants de distinguer 403/409/422 sans reparser le message
+              throw err;
+            }
+            return r.json();
+          }
+
+          function renderPlanCard(p) {
+            const statusLabel = PLAN_STATUS_LABELS[p.strategy_status] || p.strategy_status;
+            const color = PLAN_STATUS_COLORS[p.strategy_status] || '#94a3b8';
+            const statusBadge = `<span style="font-size:9px;font-weight:700;color:${color};background:${color}22;padding:1px 6px;border-radius:8px">${I18N.t('analysis.' + statusLabel)}</span>`;
+            const meta = p.metadata_json || {};
+            // volume_source voyage jusqu'à updatePlanStatus() pour que la confirmation d'approbation
+            // (APPROVED) puisse avertir explicitement si le plan repose sur une estimation, pas une
+            // segmentation réelle — voir routers/plans.py::approve_plan.
+            const srcAttr = (meta.volume_source || '').replace(/'/g, '');
+            const actions = (PLAN_TRANSITIONS[p.strategy_status] || []).map(t =>
+              `<button class="btn btn-secondary" style="flex:1;font-size:9px;margin-top:6px" onclick="updatePlanStatus('${p.id}','${t.to}','${srcAttr}')">${I18N.t('analysis.' + t.i18n)}</button>`
+            ).join('');
+            const date = new Date(p.created_at).toLocaleString();
+            const src = meta.volume_source
+              ? `<span style="font-size:9px;font-weight:700;color:${meta.volume_source.indexOf('real') === 0 ? '#22c55e' : '#eab308'};background:${meta.volume_source.indexOf('real') === 0 ? '#22c55e22' : '#eab30822'};padding:1px 6px;border-radius:8px;margin-left:4px">${meta.volume_source.indexOf('real') === 0 ? I18N.t('analysis.realSegmentationBadge') : I18N.t('analysis.proceduralBadge')}</span>`
+              : '';
+            // Trace de validation/abandon — visible sur la carte, pas seulement dans l'audit log,
+            // pour que l'équipe voie d'un coup d'œil QUI a engagé/annulé le plan et pourquoi
+            // (voir routers/plans.py::approve_plan / abort_plan).
+            let signoff = '';
+            if (p.approved_by_username) {
+              signoff = `<div style="font-size:9px;color:#22c55e;margin-top:2px">✓ ${I18N.t('analysis.planApprove').replace('✓ ', '')}: ${p.approved_by_username} · ${new Date(p.approved_at).toLocaleString()}</div>`;
+            } else if (p.aborted_by_username) {
+              signoff = `<div style="font-size:9px;color:#ef4444;margin-top:2px">✕ ${p.aborted_by_username} · ${new Date(p.aborted_at).toLocaleString()}${p.abort_reason ? ' — ' + p.abort_reason : ''}</div>`;
+            }
+            return `
+      <div style="border:1px solid var(--border);border-radius:6px;padding:8px;margin-top:6px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:4px">
+          <strong style="font-size:10px">${p.title}</strong>${statusBadge}
+        </div>
+        <div style="font-size:9px;color:var(--text3);margin-top:3px">${I18N.t('analysis.planBy')} ${p.lead_surgeon_username} · ${p.planned_procedure_code}${src}</div>
+        <div style="font-size:9px;color:var(--text3);margin-top:2px">${date}</div>
+        ${signoff}
+        ${actions ? `<div style="display:flex;gap:4px">${actions}<button class="btn btn-secondary" style="font-size:9px;margin-top:6px;color:#ef4444" onclick="deletePlan('${p.id}')">${I18N.t('common.delete')}</button></div>` : ''}
+      </div>`;
+          }
+
+          async function loadSavedPlans() {
+            const box = document.getElementById('saved-plans');
+            if (!box) return;
+            if (!state.settings.apiBase) {
+              box.innerHTML = `<div style="font-size:9px;color:var(--text3)">${I18N.t('analysis.plansBackendRequired')}</div>`;
+              return;
+            }
+            box.innerHTML = `<div style="font-size:9px;color:var(--text3)">${I18N.t('analysis.plansLoading')}</div>`;
+            try {
+              const plans = await plansAuthedFetch(`/patients/${encodeURIComponent(MODULES[state.mod].patient.id)}/plans`);
+              box.innerHTML = plans.length
+                ? plans.map(renderPlanCard).join('')
+                : `<div style="font-size:9px;color:var(--text3)">${I18N.t('analysis.plansEmpty')}</div>`;
+            } catch (e) {
+              box.innerHTML = `<div style="font-size:9px;color:#ef4444">${I18N.t('analysis.plansLoadError')}: ${e.message}</div>`;
+            }
+          }
+
+          // Le backend n'a que les patients réellement synchronisés : on upsert
+          // d'abord le patient courant (même payload que savePatientEdit), sinon
+          // POST /patients/{id}/plans répondrait 404 « Patient introuvable ».
+          async function ensurePatientSynced(mod) {
+            if (!state.settings.apiBase) return;
+            const base = state.settings.apiBase.replace(/\/+$/, '');
+            const token = await getBackendToken();
+            const p = mod.patient;
+            const body = {
+              id: p.id, nom: p.nom, age: p.age, sexe: p.sexe || 'M',
+              poids_kg: p.poids, taille_cm: p.taille, diagnostic: p.diag,
+              chirurgien: state.settings.chirurgien, specialty: state.mod, urgence: p.urg || 'vert'
+            };
+            let r = await fetch(base + '/patients/' + p.id, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }, body: JSON.stringify(body) });
+            if (r.status === 404) {
+              r = await fetch(base + '/patients', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }, body: JSON.stringify(body) });
+            }
+            if (!r.ok) throw new Error('Synchronisation patient refusée (' + r.status + ')');
+          }
+
+          async function savePlanToBackend() {
+            if (!state.settings.apiBase) {
+              notify(I18N.t('analysis.plansBackendRequired'), 'warn');
+              return;
+            }
+            const mod = MODULES[state.mod];
+            const a = computeAnalysis();
+            const volumeSource = a.dataSource === 'real_segmentation' ? 'real_segmentation_totalsegmentator' : 'procedural_estimate_not_clinical';
+            const payload = {
+              title: mod.procedures[0] + ' — ' + mod.patient.nom,
+              specialty: state.mod,
+              planned_procedure_code: 'CCAM',
+              strategy_status: 'DRAFT',
+              safety_margins_mm: 5.0,
+              resection_volume_ml: Math.round(a.resectedVol),
+              remnant_volume_ml: Math.round(a.organVol - a.resectedVol),
+              remnant_ratio_pct: a.remnantPct,
+              metadata_json: {
+                organ_volume_ml: Math.round(a.organVol),
+                risk_score: a.risk,
+                volume_source: volumeSource,
+                notes: 'Enregistré depuis l\'onglet Analyse — '
+                  + (volumeSource === 'procedural_estimate_not_clinical'
+                    ? 'volume_organe = estimation procédurale, PAS une mesure clinique validée.'
+                    : 'volume_organe issu de la segmentation IA réelle (TotalSegmentator).')
+              }
+            };
+            try {
+              await ensurePatientSynced(mod);
+              await plansAuthedFetch(`/patients/${encodeURIComponent(mod.patient.id)}/plans`, { method: 'POST', body: JSON.stringify(payload) });
+              notify(I18N.t('analysis.planSaved'), 'ok');
+              loadSavedPlans();
+            } catch (e) {
+              notify(I18N.t('analysis.planSaveError') + ': ' + e.message, 'warn');
+            }
+          }
+
+          // APPROVED et ABORTED n'utilisent plus le PUT générique : le backend (routers/plans.py)
+          // les route désormais vers POST /plans/{id}/approve (rôle surgeon/admin + confirmation
+          // explicite) et /abort (motif obligatoire), pour qu'une validation clinique reste
+          // distinguable — dans les données ET dans l'audit — d'une simple mise à jour de champ.
+          async function updatePlanStatus(planId, status, volumeSource) {
+            try {
+              if (status === 'APPROVED') {
+                const isReal = !!volumeSource && volumeSource.indexOf('real') === 0;
+                const confirmMsg = I18N.t(isReal ? 'analysis.planApproveConfirmReal' : 'analysis.planApproveConfirmEstimate');
+                if (!window.confirm(confirmMsg)) return;
+                await plansAuthedFetch('/plans/' + planId + '/approve', { method: 'POST', body: JSON.stringify({ confirmation: true }) });
+              } else if (status === 'ABORTED') {
+                const reason = window.prompt(I18N.t('analysis.planAbortReasonPrompt'), '');
+                if (reason === null) return; // annulé par l'utilisateur
+                if (reason.trim().length < 3) { notify(I18N.t('analysis.planAbortReasonRequired'), 'warn'); return; }
+                await plansAuthedFetch('/plans/' + planId + '/abort', { method: 'POST', body: JSON.stringify({ reason: reason.trim() }) });
+              } else {
+                await plansAuthedFetch('/plans/' + planId, { method: 'PUT', body: JSON.stringify({ strategy_status: status }) });
+              }
+              notify(I18N.t('analysis.planStatusUpdated'), 'ok');
+              loadSavedPlans();
+            } catch (e) {
+              const msg = (status === 'APPROVED' && e.status === 403)
+                ? I18N.t('analysis.planApproveRoleError')
+                : I18N.t('analysis.planStatusError') + ': ' + e.message;
+              notify(msg, 'warn');
+            }
+          }
+
+          async function deletePlan(planId) {
+            try {
+              await plansAuthedFetch('/plans/' + planId, { method: 'DELETE' });
+              notify(I18N.t('analysis.planDeleted'), 'ok');
+              loadSavedPlans();
+            } catch (e) {
+              notify(I18N.t('analysis.planDeleteError') + ': ' + e.message, 'warn');
+            }
           }
 
           function downloadJson(obj, filename) {
@@ -1485,6 +1684,7 @@
               close_modal: () => document.querySelectorAll('.modal-overlay.open').forEach(m => m.classList.remove('open')),
               recalc_analysis: () => runAnalysis(),
               export_plan: () => exportPlan(),
+              save_plan: () => savePlanToBackend(),
               switch_hbp: () => switchModule('hbp'),
               switch_colorectal: () => switchModule('colorectal'),
               switch_gastrique: () => switchModule('gastrique'),

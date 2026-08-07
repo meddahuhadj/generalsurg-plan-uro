@@ -60,6 +60,7 @@ class Patient(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     segments = relationship("Segment", back_populates="patient", cascade="all, delete-orphan")
+    plans = relationship("SurgicalPlan", back_populates="patient", cascade="all, delete-orphan")
 
     @property
     def bsa_m2(self):
@@ -101,6 +102,64 @@ class DicomSeries(Base):
     filename = Column(String(256), nullable=True)
     local_path = Column(String(512), nullable=True)  # dossier disque contenant les fichiers .dcm réels (si sauvegardés)
     imported_at = Column(DateTime, default=datetime.utcnow)
+
+
+class SurgicalPlan(Base):
+    """Plan chirurgical persisté (miroir de la table `surgical_plans` de
+    migrations/schema.sql + migrations/versions/b2f3d4e5f6a7).
+
+    Différence assumée avec schema.sql, documentée : `twin_id` y est NOT NULL
+    (chaque plan est lié à un jumeau numérique) mais aucune persistance de
+    jumeau numérique n'existe encore dans ce dépôt (pas d'endpoint qui écrit
+    dans `digital_twins`) — forcer la NOT NULL rendrait impossible la création
+    d'un plan. La colonne est donc NULLABLE ici, et remplie le jour où un vrai
+    pipeline de jumeau sera branché. `ai_shap_explanations` est pareillement
+    déclarée mais JAMAIS peuplée : aucun pipeline SHAP réel n'existe dans ce
+    projet, et la colonne ne doit pas servir à simuler une explicabilité IA
+    (même principe que le nettoyage des métriques fabriquées — voir README).
+
+    `metadata_json` porte ce que les colonnes typées de la table ne couvrent
+    pas : volumes organe/lésion, marge mesurée, source réelle vs estimation,
+    staging spécifique par spécialité — voir routers/plans.py.
+    """
+
+    __tablename__ = "surgical_plans"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    twin_id = Column(String(36), nullable=True)  # NULL tant qu'aucun jumeau n'est persisté
+    patient_id = Column(String(32), ForeignKey("patients.id", ondelete="CASCADE"), nullable=False)
+    lead_surgeon_username = Column(String(64), nullable=False)
+    title = Column(String(256), nullable=False)
+    specialty = Column(String(64), nullable=False, default="hbp")
+    planned_procedure_code = Column(String(64), nullable=False, default="CCAM")
+    strategy_status = Column(String(32), nullable=False, default="DRAFT")
+    resection_volume_ml = Column(Float, nullable=True)
+    remnant_volume_ml = Column(Float, nullable=True)
+    remnant_ratio_pct = Column(Float, nullable=True)
+    estimated_blood_loss_ml = Column(Float, nullable=True)
+    estimated_duration_min = Column(Integer, nullable=True)
+    safety_margins_mm = Column(Float, nullable=False, default=5.0)
+    ai_risk_score = Column(Float, nullable=True)
+    ai_shap_explanations = Column(JSON, nullable=True)  # jamais peuplée (voir docstring)
+    preop_checklist_status = Column(JSON, nullable=False, default=lambda: {"all_cleared": False, "warnings": []})
+    metadata_json = Column("metadata", JSON, default=dict)
+
+    # Validation clinique explicite — ajoutée suite à l'audit de sécurité clinique : avant
+    # ce correctif, n'importe quel utilisateur authentifié (quel que soit son rôle) pouvait
+    # faire passer un plan à APPROVED via un simple PUT générique, sans que son identité soit
+    # distinguée de celle du créateur ni qu'un rôle clinique soit vérifié. Ces colonnes ne sont
+    # renseignées que par les endpoints dédiés POST /plans/{id}/approve et /abort
+    # (routers/plans.py), jamais par la mise à jour générique.
+    approved_by_username = Column(String(64), nullable=True)
+    approved_at = Column(DateTime, nullable=True)
+    aborted_by_username = Column(String(64), nullable=True)
+    aborted_at = Column(DateTime, nullable=True)
+    abort_reason = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    patient = relationship("Patient", back_populates="plans")
 
 
 class VolumetrieResult(Base):

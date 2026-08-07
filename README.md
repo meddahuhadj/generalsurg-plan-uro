@@ -1374,3 +1374,88 @@ suivant, pas traité ici). Après confirmation explicite de l'utilisateur :
   les tests de marqueurs de code source existants, pas par un clic réel
   dans l'interface (aucun navigateur dans ce sandbox, limite documentée
   partout ailleurs dans ce fichier).
+
+## Backend + Frontend - Plans chirurgicaux persistés (fini le plan jetable)
+
+### Le constat (pourquoi ce n'était pas un « faux travail en cours »)
+Avant cette passe, le « plan » produit par l'onglet Analyse était un export
+JSON local téléchargé côté navigateur (`exportPlan()` → `downloadJson`) : il
+ne survivait ni à un changement de patient ni à une reprise, n'était jamais
+retracé (zéro audit), et son cycle de vie clinique (brouillon → approuvé →
+en cours → terminé) n'existait nulle part. Le schéma `migrations/schema.sql`
+déclarait pourtant une table `surgical_plans` (avec `strategy_status` en CHECK
+et déclencheur `updated_at`) qui n'avait jamais de modèle, d'endpoint ni
+d'écran.
+
+### Ce qui a été construit
+- **Modèle `models.SurgicalPlan`** (miroir de `surgical_plans` dans
+  schema.sql + migration `b2f3d4e5f6a7`) avec relation `Patient.plans`
+  (cascade de suppression avec le patient). Déviations assumées et
+  documentées dans la docstring : `twin_id` rendu NULLABLE (aucune
+  persistance de jumeau numérique n'existe encore — forcer NOT NULL aurait
+  rendu la création d'un plan impossible) et `ai_shap_explanations` déclarée
+  mais JAMAIS peuplée (aucun pipeline SHAP réel, même principe que le
+  nettoyage des métriques fabriquées).
+- **Router `routers/plans.py`** :
+  - `GET/POST /patients/{patient_id}/plans` — liste / création,
+  - `GET/PUT/DELETE /plans/{plan_id}` — lecture, mise à jour, suppression.
+  - **Validation des transitions de statut** (machine à états) : la table
+    autorise `DRAFT → APPROVED → IN_PROGRESS → COMPLETED` (+ `ABORTED` depuis
+    tout état actif) et refuse les sauts invalides en `409` ; un plan
+    `COMPLETED`/`ABORTED` est figé (traçabilité clinique). Toute opération
+    écrit une entrée d'audit (`Création/Mise à jour/Suppression plan`).
+  - Le champ `metadata_json` porte la source de vérité des volumes
+    (`real_segmentation` vs `procedural_estimate`) : le statut d'un plan reste
+    honnête sur l'origine de ses chiffres.
+- **Schémas Pydantic** `SurgicalPlanCreate/Update/Out` + `PlanStatus`
+  (couvre les 6 statuts du CHECK du schéma SQL).
+- **Frontend (onglet Analyse)** : section « Plans chirurgicaux » qui affiche
+  les plans persistés du patient avec leur badge de statut, leurs boutons de
+  transition (Approuver / Démarrer / Terminer / Abandonner) et la suppression
+  ; bouton « Enregistrer le plan » qui persiste le plan courant
+  (même calcul que l'onglet Analyse, `computeAnalysis()`, jamais une copie
+  désynchronisée) ; les erreurs de transition backend (409) sont affichées
+  telles quelles. Message honnête si le backend n'est pas configuré.
+  À l'enregistrement, `ensurePatientSynced()` upsert d'abord le patient
+  courant (même payload que `savePatientEdit`) : un plan étant rattaché à un
+  patient backend, les patients démo non synchronisés répondraient sinon 404
+  « Patient introuvable ».
+- **i18n** : clés ajoutées dans les 4 langues (`fr/en/nl/ar`) **et** dans le
+  dictionnaire de secours embarqué `I18N_EMBEDDED` (`app-part1.js`). Le
+  dictionnaire embarqué avait été complété pour `en` mais pas pour
+  `fr`/`nl`/`ar` (le mode hors-ligne par double-clic aurait montré des clés
+  brutes) : il a été reconstruit depuis les fichiers `i18n/*.json` pour les 4
+  langues.
+- **Tests** `backend/tests/test_surgical_plans.py` (14 tests) : CRUD complet,
+  401 sans auth, 404 patient/plan inconnus, cycle de vie valide, transition
+  invalide en 409, plan figé après ABORTED/COMPLETED, cascade de suppression
+  avec le patient, et audibilité de chaque opération.
+
+### Testé réellement
+- `pytest tests/test_surgical_plans.py` : **14 passed** (base SQLite en
+  mémoire isolée, auth court-circuitée, mêmes conventions que la suite
+  existante).
+- Suite Python complète relancée : **81 passed** — le seul échec
+  (`test_mllp.py::test_connection_refused_raises_fast`) est préexistant et
+  indépendant : vérifié en les laissant de côté avec `git stash`, il échoue
+  aussi sur un état propre (test de timing réseau, 2.01s pour un seuil de
+  2.0s).
+- `node -c` sur `app-part1.js`, `app-part2.js` et `app-part3.js` + validation
+  JSON des 4 fichiers `i18n/*.json`.
+- Dictionnaire embarqué vérifié par un scan brace-aware (`I18N_EMBEDDED` parsé
+  via Python, toutes clés des sections `analysis` des 4 langues présentes).
+  Au passage, un bug de script trouvé lors de cette vérif : un remplacement de
+  bloc par `json.dumps` incluait à tort l'accolade fermante (`src[obj_end:]`
+  au lieu de `src[obj_end + 1:]`) — corrigé et re-vérifié (`node --check`
+  passe, le dict est complet).
+
+### Limites honnêtes
+- L'enregistrement des plans nécessite un backend configuré (et, en dev,
+  SQLite recrée automatiquement la table — pas de migration Alembic ajoutée
+  pour cette table, elle suit le même chemin que `volumetrie_results`).
+- `AI_PROPOSED` est un statut réservé du schéma : aucun pipeline IA ne
+  propose encore de plans, le champ reste donc inutilisé (documenté).
+- Non testé dans un vrai navigateur : les boutons ont été vérifiés par
+  `node -c`, par lecture du flux de `I18N.t()` et par la suite de tests
+  backend (les mêmes règles de transition), pas par un clic réel (aucun
+  navigateur dans ce sandbox, limite documentée partout ailleurs).

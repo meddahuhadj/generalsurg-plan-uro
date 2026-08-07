@@ -237,6 +237,14 @@ CREATE TABLE surgical_plans (
     ai_risk_score           REAL,
     ai_shap_explanations    JSONB,
     preop_checklist_status  JSONB NOT NULL DEFAULT '{"all_cleared": false, "warnings": []}'::jsonb,
+    -- Validation clinique explicite (migration c3d4e5f6a7b8) : renseignées uniquement par
+    -- POST /plans/{id}/approve (rôle surgeon/admin) et /abort (motif obligatoire), jamais
+    -- par une mise à jour générique du statut.
+    approved_by_username    VARCHAR(64),
+    approved_at             TIMESTAMPTZ,
+    aborted_by_username     VARCHAR(64),
+    aborted_at              TIMESTAMPTZ,
+    abort_reason            TEXT,
     created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
