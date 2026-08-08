@@ -6,6 +6,7 @@ Endpoint exposé :
     GET /patients/{patient_id}/volumetrie
 """
 
+import math
 import uuid
 from typing import Literal, Optional
 
@@ -84,7 +85,7 @@ def _resolve_lesion_volume(segments: list) -> tuple:
 
 
 def _renal_nephrometry(renal_score: Optional[str], dfg_preop: Optional[float],
-                        organe_vol: float, resected: float) -> dict:
+                        organe_vol: float, lesion_vol: float, margin_cm: float) -> dict:
     """Néphrométrie RENAL (Radius/Exophytic/Nearness/Anterior/Location) → complexité
     tumorale + parenchyme rénal préservé + DFG post-opératoire prédit.
 
@@ -93,6 +94,16 @@ def _renal_nephrometry(renal_score: Optional[str], dfg_preop: Optional[float],
     ci-dessus. `organe_vol` est toujours > 0 en pratique côté appelant (fallback
     par défaut si aucune segmentation, voir get_volumetrie), donc pas de garde
     contre la division par zéro ici.
+
+    Correctif important : avant ce correctif, le volume réséqué utilisé ici était
+    `organe_vol * 0.55 + margin_cm * 32` — une formule générique de résection
+    MAJEURE (pensée pour une hépatectomie, où retirer >50% de l'organe est
+    courant), silencieusement réutilisée pour une néphrectomie PARTIELLE. Une
+    néphrectomie partielle retire la tumeur + une marge de sécurité, presque
+    toujours une PETITE fraction du rein : appliquer 55% surestimait massivement
+    le volume réséqué, donc sous-estimait le DFG post-opératoire prédit — un
+    chiffre que le chirurgien pourrait réellement utiliser pour arbitrer entre
+    chirurgie néphron-sparing et néphrectomie totale.
     """
     complexity = None
     if renal_score:
@@ -107,7 +118,16 @@ def _renal_nephrometry(renal_score: Optional[str], dfg_preop: Optional[float],
         preserved_pct = 0.0
         dfg_predicted = round(dfg_preop * 0.5, 1) if dfg_preop else None
     else:
-        preserved_pct = round((organe_vol - resected) / organe_vol * 100, 1)
+        # Approximation géométrique du volume réséqué en néphrectomie partielle : la lésion
+        # + sa marge de sécurité sont modélisées comme une sphère (rayon-équivalent de la
+        # lésion + margin_cm). Grossier — une vraie tumeur n'est pas sphérique — mais un ordre
+        # de grandeur clinique correct, et honnêtement approximatif plutôt que faussement
+        # précis. Plafonné au volume de l'organe (garde-fou, ne devrait jamais être atteint
+        # pour une complexité "simple"/"intermédiaire" en pratique).
+        r_lesion_cm = (3.0 * max(lesion_vol, 0.0) / (4.0 * math.pi)) ** (1.0 / 3.0)
+        r_resected_cm = r_lesion_cm + max(margin_cm, 0.0)
+        resected_ml = min(organe_vol * 0.95, (4.0 / 3.0) * math.pi * r_resected_cm ** 3)
+        preserved_pct = round((organe_vol - resected_ml) / organe_vol * 100, 1)
         dfg_predicted = round(dfg_preop * preserved_pct / 100, 1) if dfg_preop else None
     return {
         "renal_score": renal_score,
@@ -161,7 +181,7 @@ async def get_volumetrie(patient_id: str, request: Request, margin_cm: float = 1
             "flr_bw_pct": round(remnant_pct * 0.7 / 70, 2), "bsa_m2": round(bsa_val, 2),
         })
     elif p.specialty == "urologie":
-        result.update(_renal_nephrometry(renal_score, dfg_preop, organe_vol, resected))
+        result.update(_renal_nephrometry(renal_score, dfg_preop, organe_vol, lesion_vol, margin_cm))
 
     db.add(models.VolumetrieResult(
         id=str(uuid.uuid4()), patient_id=patient_id, organ_volume_ml=result["organ_volume_ml"],

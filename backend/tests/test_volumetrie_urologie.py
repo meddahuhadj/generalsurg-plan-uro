@@ -117,54 +117,77 @@ def test_resolve_lesion_volume_manual_segment_without_ai_flag_still_uses_populat
 
 
 def test_simple_tumor_score_le_6():
-    r = _renal_nephrometry("4a", dfg_preop=90.0, organe_vol=150.0, resected=90.0)
+    """Volume réséqué dérivé de la lésion réelle (20 mL) + marge (1 cm), PAS de
+    organe_vol * 0.55 (formule d'hépatectomie) : sphère équivalente ≈ 81 mL
+    réséqués sur 150 mL -> ≈46% préservés (voir _renal_nephrometry)."""
+    r = _renal_nephrometry("4a", dfg_preop=90.0, organe_vol=150.0, lesion_vol=20.0, margin_cm=1.0)
     assert r["renal_complexity"] == "simple"
-    # 60 mL préservés sur 150 mL -> 40%
-    assert r["preserved_parenchyma_pct"] == pytest.approx(40.0)
-    assert r["dfg_predicted_ml_min"] == pytest.approx(90.0 * 0.4, abs=0.1)
+    assert r["preserved_parenchyma_pct"] == pytest.approx(46.0, abs=0.1)
+    assert r["dfg_predicted_ml_min"] == pytest.approx(90.0 * 0.46, abs=0.2)
 
 
 def test_intermediate_tumor_score_7_to_9():
-    r = _renal_nephrometry("8x", dfg_preop=68.0, organe_vol=150.0, resected=90.0)
+    r = _renal_nephrometry("8x", dfg_preop=68.0, organe_vol=150.0, lesion_vol=20.0, margin_cm=1.0)
     assert r["renal_complexity"] == "intermediaire"
-    assert r["preserved_parenchyma_pct"] == pytest.approx(40.0)
+    assert r["preserved_parenchyma_pct"] == pytest.approx(46.0, abs=0.1)
+
+
+def test_smaller_lesion_preserves_more_parenchyma():
+    """Une lésion plus petite (15 mL vs 20 mL, même marge) doit préserver
+    STRICTEMENT plus de parenchyme — le volume réséqué suit la taille réelle
+    de la tumeur, pas une fraction fixe du rein entier."""
+    r_small = _renal_nephrometry("4a", dfg_preop=90.0, organe_vol=150.0, lesion_vol=15.0, margin_cm=1.0)
+    r_big = _renal_nephrometry("4a", dfg_preop=90.0, organe_vol=150.0, lesion_vol=20.0, margin_cm=1.0)
+    assert r_small["preserved_parenchyma_pct"] > r_big["preserved_parenchyma_pct"]
+    assert r_small["preserved_parenchyma_pct"] == pytest.approx(54.8, abs=0.1)
 
 
 def test_complex_tumor_score_ge_10_orients_total_nephrectomy():
     """RENAL >= 10 : le résidu fonctionnel n'est plus le rein opéré (retiré en
     totalité) mais le rein controlatéral, dont le DFG estimé est ~50% du DFG
-    total préopératoire — indépendant du volume réséqué localement."""
-    r = _renal_nephrometry("11a", dfg_preop=80.0, organe_vol=150.0, resected=90.0)
+    total préopératoire — indépendant du volume de la lésion (néphrectomie
+    totale, pas partielle)."""
+    r = _renal_nephrometry("11a", dfg_preop=80.0, organe_vol=150.0, lesion_vol=20.0, margin_cm=1.0)
     assert r["renal_complexity"] == "complexe"
     assert r["preserved_parenchyma_pct"] == 0.0
     assert r["dfg_predicted_ml_min"] == pytest.approx(40.0)
 
 
 def test_boundary_scores_6_and_7_and_9_and_10():
-    assert _renal_nephrometry("6a", None, 150.0, 90.0)["renal_complexity"] == "simple"
-    assert _renal_nephrometry("7a", None, 150.0, 90.0)["renal_complexity"] == "intermediaire"
-    assert _renal_nephrometry("9x", None, 150.0, 90.0)["renal_complexity"] == "intermediaire"
-    assert _renal_nephrometry("10a", None, 150.0, 90.0)["renal_complexity"] == "complexe"
+    assert _renal_nephrometry("6a", None, 150.0, 20.0, 1.0)["renal_complexity"] == "simple"
+    assert _renal_nephrometry("7a", None, 150.0, 20.0, 1.0)["renal_complexity"] == "intermediaire"
+    assert _renal_nephrometry("9x", None, 150.0, 20.0, 1.0)["renal_complexity"] == "intermediaire"
+    assert _renal_nephrometry("10a", None, 150.0, 20.0, 1.0)["renal_complexity"] == "complexe"
 
 
 def test_no_renal_score_leaves_complexity_none():
-    r = _renal_nephrometry(None, dfg_preop=70.0, organe_vol=150.0, resected=90.0)
+    r = _renal_nephrometry(None, dfg_preop=70.0, organe_vol=150.0, lesion_vol=20.0, margin_cm=1.0)
     assert r["renal_complexity"] is None
     assert r["renal_score"] is None
     # Pas de score -> traité comme la branche "non complexe" (pas de total
     # nephrectomy présumée) : le parenchyme préservé reste calculé.
-    assert r["preserved_parenchyma_pct"] == pytest.approx(40.0)
+    assert r["preserved_parenchyma_pct"] == pytest.approx(46.0, abs=0.1)
 
 
 def test_no_dfg_preop_leaves_prediction_none():
-    r = _renal_nephrometry("4a", dfg_preop=None, organe_vol=150.0, resected=90.0)
+    r = _renal_nephrometry("4a", dfg_preop=None, organe_vol=150.0, lesion_vol=20.0, margin_cm=1.0)
     assert r["dfg_predicted_ml_min"] is None
-    r_complex = _renal_nephrometry("11a", dfg_preop=None, organe_vol=150.0, resected=90.0)
+    r_complex = _renal_nephrometry("11a", dfg_preop=None, organe_vol=150.0, lesion_vol=20.0, margin_cm=1.0)
     assert r_complex["dfg_predicted_ml_min"] is None
 
 
 def test_non_numeric_renal_score_is_ignored_gracefully():
     """Un score mal formé (pas de chiffre extractible) ne doit jamais lever
     d'exception — juste ne pas classer la complexité."""
-    r = _renal_nephrometry("abc", dfg_preop=70.0, organe_vol=150.0, resected=90.0)
+    r = _renal_nephrometry("abc", dfg_preop=70.0, organe_vol=150.0, lesion_vol=20.0, margin_cm=1.0)
     assert r["renal_complexity"] is None
+
+
+def test_resected_volume_capped_at_organ_volume():
+    """Une lésion énorme (approximation sphérique dépassant le rein entier) ne doit
+    jamais produire un volume réséqué > organe_vol, ni un preserved_pct négatif —
+    garde-fou plutôt qu'un chiffre absurde (edge case, la complexité serait en
+    pratique presque toujours "complexe" pour une lésion aussi grosse)."""
+    r = _renal_nephrometry("5a", dfg_preop=80.0, organe_vol=150.0, lesion_vol=5000.0, margin_cm=1.0)
+    assert r["preserved_parenchyma_pct"] == pytest.approx(5.0, abs=0.1)  # plafonné à 95% réséqué
+    assert r["preserved_parenchyma_pct"] >= 0.0
