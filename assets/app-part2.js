@@ -924,7 +924,10 @@
               const stageRank = { cT1c: 1, cT2a: 2, cT2b: 3, cT2c: 4, cT3a: 5, cT3b: 6 }[pStage] ?? 2;
               if (!isNaN(psa) && isup !== null) {
                 const isHigh = psa > 20 || isup >= 4 || stageRank >= 4;
-                const isLow = psa < 10 && isup === 1 && stageRank <= 2;
+                // Critère original D'Amico 1998 : risque faible = PSA <= 10 ng/mL (borne incluse),
+                // pas < 10 — un PSA exactement à 10.0 est un cas réel (pas juste un cas d'école) et
+                // était auparavant classé "intermédiaire" au lieu de "faible" par cette borne stricte.
+                const isLow = psa <= 10 && isup === 1 && stageRank <= 2;
                 if (isHigh) {
                   criteria.push({ ok: 'warn', text: `Risque de D'Amico élevé (PSA ${psaStr}, Gleason ${gleason}, ${pStage}) — prostatectomie élargie + curage ilio-obturateur ou radio-hormonothérapie à discuter` });
                 } else if (isLow) {
